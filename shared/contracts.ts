@@ -12,6 +12,15 @@ export interface ChatResponse {
   createdAt: string;
 }
 export interface HealthResponse { status: 'ok'; provider: 'local'; version: string }
+export interface AssistantProvider {
+  readonly name: string;
+  respond(request: ChatRequest): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
+}
+export interface NoteRepository {
+  add(sessionId: string, content: string): boolean;
+  list(sessionId: string): { content: string }[];
+  clear(sessionId: string): number;
+}
 export interface Message {
   id: string;
   role: 'user' | 'assistant';

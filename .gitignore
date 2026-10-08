@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-pages/
 dist-server/
 data/
 .env
@@ -8,4 +9,5 @@ data/
 coverage/
 playwright-report/
 test-results/
+test-results-pages/
 *.log

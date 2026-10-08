@@ -1,6 +1,12 @@
 import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/contracts';
 
+export const BROWSER_MODE = import.meta.env.MODE === 'pages';
+
 export async function sendMessage(body: ChatRequest): Promise<ChatResponse> {
+  if (BROWSER_MODE) {
+    const { browserCommand } = await import('./browser');
+    return browserCommand(body);
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   try {
@@ -19,6 +25,7 @@ export async function sendMessage(body: ChatRequest): Promise<ChatResponse> {
   } finally { clearTimeout(timer); }
 }
 export async function checkHealth(signal: AbortSignal): Promise<HealthResponse> {
+  if (BROWSER_MODE) return { status: 'ok', provider: 'local', version: '0.1.0' };
   const response = await fetch('/api/health', { signal, cache: 'no-store' });
   if (!response.ok) throw new Error('Servidor indisponível');
   return response.json() as Promise<HealthResponse>;

@@ -2,6 +2,8 @@
 
 Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS. React, TypeScript, Vite, Tailwind CSS, Fastify e SQLite. Sem API paga, cartão de crédito ou credenciais no frontend.
 
+Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
+
 **O MVP é um motor de comandos locais, não um modelo generativo de IA.** Não navega na internet, não controla o sistema operacional e não entende pedidos arbitrários. A interface informa esse limite. O código de provedores permite integrar um modelo em uma próxima etapa.
 
 ## Começar
@@ -27,6 +29,9 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm test` | Testes unitários e de integração (Vitest) |
 | `npm run test:watch` | Testes em modo contínuo |
 | `npm run build` | Typecheck, build frontend e compilação backend |
+| `npm run build:pages` | Build estática funcional para GitHub Pages em `dist-pages/` |
+| `npm run preview:pages` | Servir a build Pages para validação local |
+| `npm run test:pages` | Testes desktop/celular sem API para a build Pages |
 | `npm start` | Servir a aplicação compilada e a API na porta 3001 |
 | `npm run test:e2e` | Testes de navegador em desktop e celular |
 | `npm run check` | Testes, build e testes de navegador |
@@ -43,13 +48,36 @@ O backend lê `.env` se existir. Para personalizar, copie `.env.example` para `.
 
 No desenvolvimento, mantenha a API na porta 3001 para o proxy do Vite. Em uma rede doméstica confiável, o Vite escuta em `0.0.0.0`: celular e Xbox podem acessar o IP do computador na porta 5173, se o firewall permitir. Para a versão compilada aceitar conexões na rede, configure `HOST=0.0.0.0`. Isso **não fornece HTTPS**. Use um proxy HTTPS se precisar de microfone fora de `localhost`.
 
+## Hospedar no GitHub Pages
+
+O workflow `.github/workflows/pages.yml` testa e publica a build estática em pushes para `main` ou execução manual. Ele usa apenas o token padrão do GitHub Actions: não requer cadastrar credenciais nem contratar servidor.
+
+1. No repositório, abra **Settings → Pages**.
+2. Em **Build and deployment → Source**, selecione **GitHub Actions**.
+3. Abra **Actions → Publish GitHub Pages → Run workflow**, usando `main`.
+4. Aguarde o job `deploy` concluir. O endereço esperado é `https://eriksmoura14-ai.github.io/Jarvis.ai/`; sua existência só é confirmada após o deploy.
+
+Essa opção funciona em repositório público sem assinatura paga. A build usa o caminho `/Jarvis.ai/`, inclusive nos assets e favicon. Se renomear o repositório, ajuste o `base` do modo `pages` em `vite.config.ts`.
+
+No site Pages, o rótulo **Modo navegador** identifica a execução sem servidor. Hora, data, cálculos e notas usam o mesmo `LocalProvider` do backend. Notas são salvas em `localStorage`, separadas por sessão; nenhuma conversa é enviada à API. O histórico também permanece no navegador. Dados da versão servidor não migram automaticamente para Pages e não há sincronização entre dispositivos. O reconhecimento de voz continua sujeito aos serviços e permissões do próprio navegador.
+
+Para validar antes de publicar:
+
+```bash
+npm run build:pages
+npm run test:pages
+npm run preview:pages
+```
+
+O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esses componentes ficam no código para uso no modo servidor. A versão Pages não é uma PWA: ela precisa carregar os arquivos do site e não garante abertura offline.
+
 ## Funcionalidades implementadas
 
 - Interface em português, tema escuro e detalhes azuis, núcleo animado em CSS/SVG, layouts para desktop e celular.
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
 - Histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
-- Notas persistentes em SQLite, associadas ao identificador da sessão do navegador. Limpar a conversa preserva as notas.
+- Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
 - Captura com `getUserMedia` e `MediaRecorder`, mediante ação e permissão do usuário. Limite de 60 segundos, botão de parada, reprodução local e descarte do áudio.
 - Transcrição via Web Speech API quando disponível. O texto entra no campo para revisão, **sem envio automático**. Digitação permanece disponível.
 - Síntese de voz: botão “Ouvir” e leitura automática opcional, desligada por padrão. Preferência persistida e botão para parar a leitura.
@@ -95,11 +123,13 @@ e2e/                      Testes Playwright
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
-Fluxo: React → `POST /api/chat` → provedor local → SQLite quando o comando usa notas → resposta em texto. `GET /api/health` verifica a API. O horário usa o fuso IANA informado pelo navegador, validado no backend.
+Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando o comando usa notas → resposta em texto. `GET /api/health` verifica a API. No modo Pages: React → adaptador `src/lib/browser.ts` → o mesmo provedor em `shared/local.ts` → `localStorage`, sem requisições à API. A calculadora comum fica em `shared/calculator.ts`. O horário usa o fuso IANA informado pelo navegador, validado no backend quando há API.
 
 `buildApp({ provider })` permite injetar outro `AssistantProvider`. Uma futura integração deve ampliar os metadados do contrato compartilhado para o novo provedor e manter credenciais, chamadas ao modelo, custos e limites no backend. Esta versão não inclui SDK de IA nem campos para chaves.
 
 ### Dados e privacidade
+
+Os parágrafos abaixo descrevem o **modo servidor**. No modo Pages, tanto o histórico quanto as notas ficam no navegador e a conversa não é enviada ao backend. Os dois modos não compartilham notas automaticamente.
 
 O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem.
 
@@ -148,6 +178,6 @@ Vitest cobre cálculos válidos/inválidos, API real por injeção Fastify, vali
 2. Acrescentar autenticação, gestão de sessões, exclusão individual e backup/exportação de notas.
 3. Implementar um provedor de modelo local ou integração opcional no backend, com escolha explícita do usuário e limites de consumo.
 4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
-5. Adicionar PWA/cache com estratégia offline — atualmente o chat exige a API em execução — e ampliar testes de acessibilidade com leitores de tela.
+5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 
 JARVIS AI é um projeto independente de portfólio. Não possui afiliação com Marvel, Microsoft ou seus produtos.
