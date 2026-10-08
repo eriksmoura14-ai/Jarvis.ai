@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
+});
+
 test('chat, notas e histórico funcionam sem API no caminho do GitHub Pages', async ({ page }) => {
   const apiRequests: string[] = [];
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url()); });

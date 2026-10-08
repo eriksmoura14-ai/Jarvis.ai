@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Activity, ArrowDown, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clock3, Cpu, Gamepad2, Keyboard, MessageSquare, Mic, NotebookPen, Send, Settings2, ShieldCheck, Sparkles, Square, Trash2, Volume2, VolumeX, WifiOff, X } from 'lucide-react';
 import { Core } from './components/Core';
+import { VoiceScene } from './components/VoiceScene';
 import { Dialog } from './components/Dialog';
 import { useGamepad } from './hooks/useGamepad';
 import { useSpeechOutput, useVoiceInput } from './hooks/useVoice';
 import { BROWSER_MODE, checkHealth, sendMessage } from './lib/api';
-import { HISTORY_KEY, MAX_HISTORY, loadHistory, loadSession, loadVoicePreference, makeId } from './lib/storage';
+import { HISTORY_KEY, MAX_HISTORY, loadHistory, loadSession, loadVoicePreference, loadView, makeId } from './lib/storage';
 import { MAX_MESSAGE_LENGTH, type Message } from '../shared/contracts';
 
 const welcome = (): Message => ({ id: 'welcome', role: 'assistant', content: 'Olá, sou o JARVIS. Seu espaço para pensar, organizar e resolver. Experimente um comando abaixo ou digite “ajuda” para começar.', createdAt: new Date().toISOString() });
@@ -14,11 +15,16 @@ const commands = [
   { icon: NotebookPen, title: 'Guardar uma nota', command: 'anotar ', detail: 'Suas ideias, organizadas' },
   { icon: Cpu, title: 'Fazer um cálculo', command: 'calcular ', detail: 'Números sem complicação' },
 ];
-type Modal = 'help' | 'settings' | 'clear' | null;
+type Modal = 'help' | 'settings' | 'clear' | 'history' | null;
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>(() => { const stored = loadHistory(); return stored.length ? stored : [welcome()]; });
   const [sessionId] = useState(loadSession);
+  const [view, setView] = useState(loadView);
+  const [continuous, setContinuous] = useState(false);
+  const [voiceSound, setVoiceSound] = useState(true);
+  const [notice, setNotice] = useState('');
+  const [spokenText, setSpokenText] = useState('');
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -33,22 +39,48 @@ export default function App() {
   const sending = useRef(false);
   const shouldScroll = useRef(true);
   const closeModal = useCallback(() => setModal(null), []);
+  const viewRef = useRef(view);
+  const continuousRef = useRef(continuous);
+  const soundRef = useRef(voiceSound);
+  const sessionActive = useRef(false);
+  const microphoneActive = useRef(false);
+  const turn = useRef(0);
+  const request = useRef<AbortController | null>(null);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendRef = useRef<(text: string, source?: 'text' | 'voice') => Promise<void>>(async () => {});
+  const startVoiceRef = useRef<() => void>(() => {});
+  const interruptRef = useRef<(message?: string) => void>(() => {});
+  viewRef.current = view;
+  continuousRef.current = continuous;
+  soundRef.current = voiceSound;
   const output = useSpeechOutput();
   const controller = useGamepad();
   const voice = useVoiceInput(text => {
-    setDraft(previous => `${previous}${previous ? ' ' : ''}${text}`.slice(0, MAX_MESSAGE_LENGTH));
-    textarea.current?.focus();
+    if (viewRef.current === 'voice') setSpokenText(previous => `${previous} ${text}`.trim().slice(0, MAX_MESSAGE_LENGTH));
+    else {
+      setDraft(previous => `${previous}${previous ? ' ' : ''}${text}`.slice(0, MAX_MESSAGE_LENGTH));
+      textarea.current?.focus();
+    }
+  }, {
+    captureAudio: view === 'chat',
+    onComplete: text => {
+      if (viewRef.current !== 'voice' || !microphoneActive.current || document.hidden) return;
+      microphoneActive.current = false;
+      void sendRef.current(text.slice(0, MAX_MESSAGE_LENGTH), 'voice');
+    },
+    onFailure: () => { microphoneActive.current = false; sessionActive.current = false; continuousRef.current = false; setContinuous(false); },
   });
-  const state = voice.phase === 'recording' ? 'listening' : pending ? 'thinking' : output.speaking ? 'speaking' : 'idle';
+  const state = voice.phase === 'recording' ? 'listening' : pending ? 'thinking' : output.busy ? 'speaking' : 'idle';
   const stateLabel = { listening: 'À escuta', thinking: 'Processando', speaking: 'Falando', idle: health === 'online' ? 'Pronto para conversar' : health === 'checking' ? 'Conectando ao assistente' : 'Servidor indisponível' }[state];
 
   useEffect(() => {
     try {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
       localStorage.setItem('jarvis.voice.v1', String(autoVoice));
+      localStorage.setItem('jarvis.view.v1', view);
       setStorageError(false);
     } catch { setStorageError(true); }
-  }, [messages, autoVoice]);
+  }, [messages, autoVoice, view]);
   useEffect(() => {
     let mounted = true;
     let request: AbortController | undefined;
@@ -73,27 +105,109 @@ export default function App() {
   useEffect(() => {
     if (log.current && shouldScroll.current) { log.current.scrollTop = log.current.scrollHeight; setNearBottom(true); }
   }, [messages, pending]);
-  const handleSend = async (text: string) => {
-    const content = text.trim();
-    if (!content || sending.current || voice.phase !== 'idle') return;
+  const interrupt = useCallback((message = 'Conversa pausada. Toque no microfone para começar novamente.') => {
+    turn.current++;
+    microphoneActive.current = false;
+    sessionActive.current = false;
+    continuousRef.current = false;
+    setContinuous(false);
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    request.current?.abort();
+    voice.cancel();
+    output.stop();
+    sending.current = false;
+    setPending(false);
+    setNotice(message);
+  }, [voice.cancel, output.stop]);
+  interruptRef.current = interrupt;
+  useEffect(() => {
+    const visibility = () => { if (document.hidden) interruptRef.current('Conversa pausada enquanto você usa outro aplicativo. Toque para retomar.'); };
+    const pageHide = () => interruptRef.current();
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && viewRef.current === 'voice' && !document.querySelector('dialog[open]')) interruptRef.current();
+    };
+    document.addEventListener('visibilitychange', visibility);
+    document.addEventListener('keydown', escape);
+    window.addEventListener('pagehide', pageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      document.removeEventListener('keydown', escape);
+      window.removeEventListener('pagehide', pageHide);
+      turn.current++;
+      microphoneActive.current = false;
+      sessionActive.current = false;
+      request.current?.abort();
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    };
+  }, []);
+  const startVoice = () => {
+    if (document.hidden || sending.current || voice.phase !== 'idle') return;
+    output.stop();
+    setError('');
+    setNotice('');
+    setSpokenText('');
+    microphoneActive.current = true;
+    sessionActive.current = true;
+    void voice.start();
+  };
+  startVoiceRef.current = startVoice;
+  const handleSend = async (text: string, source: 'text' | 'voice' = 'text') => {
+    const content = text.trim().slice(0, MAX_MESSAGE_LENGTH);
+    if (!content || sending.current || (source === 'text' && voice.phase !== 'idle')) return;
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    output.stop();
+    if (source === 'text') sessionActive.current = false;
+    const token = ++turn.current;
+    const current = new AbortController();
+    request.current = current;
     sending.current = true;
     setPending(true);
     setError('');
+    setNotice('');
     setDraft('');
+    if (viewRef.current === 'voice') setSpokenText(content);
     shouldScroll.current = true;
     const user: Message = { id: makeId(), role: 'user', content, createdAt: new Date().toISOString() };
     setMessages(previous => [...previous, user].slice(-MAX_HISTORY));
     try {
-      const response = await sendMessage({ message: content, sessionId, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+      const response = await sendMessage({ message: content, sessionId, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }, current.signal);
+      if (token !== turn.current) return;
       setMessages(previous => [...previous, { id: response.id, role: 'assistant' as const, content: response.message, createdAt: response.createdAt }].slice(-MAX_HISTORY));
       setHealth('online');
-      if (autoVoice) output.speak(response.message);
+      sending.current = false;
+      setPending(false);
+      const inVoice = viewRef.current === 'voice';
+      if (inVoice ? soundRef.current : autoVoice) {
+        const outcome = await output.speak(response.message);
+        if (token === turn.current && inVoice && outcome === 'ended' && continuousRef.current && sessionActive.current && !document.hidden) {
+          resumeTimer.current = setTimeout(() => { if (token === turn.current && viewRef.current === 'voice' && continuousRef.current && sessionActive.current && !document.hidden) startVoiceRef.current(); }, 350);
+        } else if (token === turn.current && outcome !== 'ended') {
+          sessionActive.current = false;
+          continuousRef.current = false;
+          setContinuous(false);
+        }
+      }
     } catch (cause) {
+      if (token !== turn.current) return;
+      sessionActive.current = false;
+      continuousRef.current = false;
+      setContinuous(false);
       setError(cause instanceof Error ? cause.message : 'Não foi possível enviar. Tente novamente.');
       setDraft(previous => previous || content);
       setMessages(previous => previous.filter(message => message.id !== user.id));
-    } finally { sending.current = false; setPending(false); }
+    } finally {
+      if (token === turn.current) { request.current = null; sending.current = false; setPending(false); }
+    }
   };
+  sendRef.current = handleSend;
+  const changeView = (value: 'voice' | 'chat') => {
+    interrupt('');
+    voice.clearAudio();
+    viewRef.current = value;
+    setView(value);
+  };
+  const openVoiceModal = (value: Modal) => { interrupt(''); setModal(value); };
+  const lastReply = [...messages].reverse().find(message => message.role === 'assistant' && message.id !== 'welcome')?.content ?? '';
   const submit = (event: FormEvent) => { event.preventDefault(); void handleSend(draft); };
   const chooseCommand = (command: string) => {
     if (command.endsWith(' ')) { setDraft(command); textarea.current?.focus(); }
@@ -101,8 +215,24 @@ export default function App() {
   };
   const formatTime = (date: string) => new Date(date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-  return <div className="app-shell">
-    <a className="skip-link" href="#message-input">Ir para a mensagem</a>
+  return <div className={view === 'voice' ? 'voice-shell' : 'app-shell'}>
+    <a className="skip-link" href={view === 'voice' ? '#main' : '#message-input'}>{view === 'voice' ? 'Ir para o assistente' : 'Ir para a mensagem'}</a>
+    {view === 'voice' && <VoiceScene
+      state={state} phase={voice.phase} pending={pending} speechBusy={output.busy}
+      canListen={voice.canRecognize} speechSupported={output.supported} sound={voiceSound}
+      continuous={continuous} status={stateLabel}
+      connection={health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}
+      error={error || voice.error || output.error} notice={notice} transcript={voice.interim || spokenText}
+      reply={lastReply} draft={draft} storageError={storageError} textareaRef={textarea}
+      onDraft={setDraft} onSend={() => void handleSend(draft)}
+      onMicrophone={() => { if (voice.phase === 'requesting') interrupt(); else if (voice.phase === 'recording') voice.stop(); else if (pending || output.busy) interrupt(); else startVoice(); }}
+      onInterrupt={() => interrupt()} onSound={() => { interrupt(''); soundRef.current = !voiceSound; setVoiceSound(!voiceSound); }}
+      onContinuous={value => { continuousRef.current = value; setContinuous(value); if (!value) sessionActive.current = false; }}
+      onChat={() => changeView('chat')} onHistory={() => openVoiceModal('history')}
+      onSettings={() => openVoiceModal('settings')} onHelp={() => openVoiceModal('help')}
+      onReplay={() => { interrupt(''); void output.speak(lastReply); }}
+    />}
+    {view === 'chat' && <>
     <aside className="sidebar" aria-label="Navegação principal">
       <a className="brand" href="#main"><span className="brand-mark">J<span>.</span></span><span className="brand-name">JARVIS<span>PERSONAL ASSISTANT</span></span></a>
       <div className="sidebar-label">WORKSPACE</div>
@@ -119,7 +249,7 @@ export default function App() {
     </aside>
 
     <main id="main" className="main-area">
-      <header className="topbar"><div><span className="eyebrow">CENTRAL DE COMANDO</span><h1>Assistente pessoal<span className="version">BETA 0.1</span></h1></div><div className="header-meta"><span className={`connection ${health}`}><span />{health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}</span><span className="header-date">{clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}<span className="meta-divider" />{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div></header>
+      <header className="topbar"><div><span className="eyebrow">CENTRAL DE COMANDO</span><h1>Assistente pessoal<span className="version">BETA 0.1</span></h1></div><div className="header-meta"><button data-gamepad className="chat-voice-switch" aria-label="Abrir modo voz" onClick={() => changeView('voice')}><Mic size={16} /><span>Modo voz</span></button><span className={`connection ${health}`}><span />{health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}</span><span className="header-date">{clock.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}<span className="meta-divider" />{clock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div></header>
       <div className="workspace">
         <section className="assistant-area" aria-label="Assistente JARVIS">
           <div className="hero">
@@ -167,10 +297,12 @@ export default function App() {
         </aside>
       </div>
     </main>
+    </>}
 
-    {modal && <Dialog title={modal === 'help' ? 'O que o JARVIS pode fazer' : modal === 'settings' ? 'Seu assistente, do seu jeito' : 'Limpar esta conversa?'} onClose={closeModal}>
+    {modal && <Dialog key={modal} title={modal === 'help' ? 'O que o JARVIS pode fazer' : modal === 'settings' ? 'Seu assistente, do seu jeito' : modal === 'history' ? 'Histórico da conversa' : 'Limpar esta conversa?'} onClose={closeModal}>
       {modal === 'help' && <><p className="modal-description">O MVP usa comandos locais. Escolha um exemplo ou digite na conversa.</p><div className="command-list">{[['hora', 'Consultar o horário'], ['data', 'Ver a data de hoje'], ['calcular (12 + 8) / 2', 'Calcular uma expressão'], ['anotar ', BROWSER_MODE ? 'Guardar uma nota neste navegador' : 'Guardar uma nota no SQLite'], ['notas', 'Ler suas notas'], ['apagar notas', 'Excluir todas as suas notas']].map(([command, label]) => <button data-gamepad key={command} disabled={pending || voice.phase !== 'idle'} onClick={() => { closeModal(); chooseCommand(command); }}><span><strong>{label}</strong><code>{command === 'anotar ' ? 'anotar comprar leite' : command}</code></span><ArrowRight size={17} /></button>)}</div><p className="privacy-note">{BROWSER_MODE ? '“Apagar notas” exclui as notas deste navegador. Limpar a conversa preserva as notas. Elas não são sincronizadas entre dispositivos.' : '“Apagar notas” exclui as notas da sua sessão. Elas ficam no servidor e não são removidas ao limpar a conversa. Não use este MVP para informações sensíveis em um servidor público.'}</p></>}
-      {modal === 'settings' && <><p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente</strong><small>{output.supported ? 'Usa as vozes disponíveis no navegador.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><div className="settings-detail"><ShieldCheck size={19} /><div><strong>Histórico no navegador</strong><p>{BROWSER_MODE ? 'Mensagens e notas ficam apenas neste navegador. Os comandos são processados no seu dispositivo, sem enviar a conversa a uma API. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa é enviada à API para responder, mas não é armazenada no servidor. Notas são persistidas em SQLite por sessão.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>A gravação só começa após seu clique e permissão. O áudio fica temporariamente neste navegador. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
+      {modal === 'settings' && <><p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente no chat</strong><small>{output.supported ? 'Usa as vozes disponíveis no navegador.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><label className="voice-selection"><span>Voz do assistente</span><select data-gamepad aria-label="Voz do assistente" disabled={!output.supported || !output.voices.length} value={output.voiceUri} onChange={event => output.chooseVoice(event.target.value)}><option value="">Automática · português quando disponível</option>{output.voices.map(item => <option key={item.voiceURI} value={item.voiceURI}>{item.name} ({item.lang})</option>)}</select><small>As vozes são fornecidas pelo seu navegador e dispositivo.</small></label><div className="settings-detail"><ShieldCheck size={19} /><div><strong>Histórico no navegador</strong><p>{BROWSER_MODE ? 'Mensagens e notas ficam apenas neste navegador. Os comandos são processados no seu dispositivo, sem enviar a conversa a uma API. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa é enviada à API para responder, mas não é armazenada no servidor. Notas são persistidas em SQLite por sessão.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>O microfone só é ativado após seu clique e permissão. No modo chat, o áudio gravado fica temporariamente neste navegador. No modo voz, apenas a transcrição entra no histórico. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
+      {modal === 'history' && <><p className="modal-description">Suas conversas neste navegador. Você também pode continuar pelo modo chat.</p><div className="history-log" role="log" aria-label="Histórico de mensagens" tabIndex={0}>{messages.map(message => <article className={`message message-${message.role}`} key={message.id}><span className={`message-avatar ${message.role === 'assistant' ? 'jarvis-avatar' : ''}`} aria-hidden="true">{message.role === 'assistant' ? 'J' : 'U'}</span><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong><time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p></div></article>)}</div><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={() => setModal('clear')}>Limpar conversa</button><button data-gamepad className="primary-button" onClick={() => { closeModal(); changeView('chat'); }}>Abrir modo chat</button></div></>}
       {modal === 'clear' && <><p className="modal-description">As mensagens serão removidas do histórico deste navegador. {BROWSER_MODE ? 'Suas notas neste navegador serão preservadas.' : 'Suas notas no servidor serão preservadas.'}</p><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={closeModal}>Cancelar</button><button data-gamepad className="primary-button" onClick={() => { output.stop(); setMessages([welcome()]); setError(''); shouldScroll.current = true; closeModal(); }}>Limpar conversa</button></div></>}
     </Dialog>}
   </div>;

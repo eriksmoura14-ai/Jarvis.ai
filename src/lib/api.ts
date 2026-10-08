@@ -2,12 +2,16 @@ import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/con
 
 export const BROWSER_MODE = import.meta.env.MODE === 'pages';
 
-export async function sendMessage(body: ChatRequest): Promise<ChatResponse> {
+export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
+  if (signal?.aborted) throw new DOMException('Request canceled', 'AbortError');
   if (BROWSER_MODE) {
     const { browserCommand } = await import('./browser');
+    if (signal?.aborted) throw new DOMException('Request canceled', 'AbortError');
     return browserCommand(body);
   }
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  signal?.addEventListener('abort', cancel, { once: true });
   const timer = setTimeout(() => controller.abort(), 20_000);
   try {
     const response = await fetch('/api/chat', {
@@ -22,7 +26,7 @@ export async function sendMessage(body: ChatRequest): Promise<ChatResponse> {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('O assistente demorou para responder. Tente novamente.');
     if (error instanceof TypeError) throw new Error('Sem conexão com o assistente. Confira se o servidor está em execução.');
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
 }
 export async function checkHealth(signal: AbortSignal): Promise<HealthResponse> {
   if (BROWSER_MODE) return { status: 'ok', provider: 'local', version: '0.1.0' };

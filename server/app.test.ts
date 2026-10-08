@@ -35,6 +35,16 @@ describe('API e comandos locais', () => {
     expect(response.json()).toMatchObject({ command: 'unknown' });
     expect(response.json().message).toContain('não um modelo de IA');
   });
+  it('entende o nome Jarvis e operadores falados sem executar código', async () => {
+    const app = await setup();
+    expect((await chat(app, 'Jarvis, que horas são?')).json().command).toBe('time');
+    expect((await chat(app, 'Jarvis, calcular dois mais cinco.')).json().message).toBe('O resultado é 7.');
+    expect((await chat(app, 'calcular seis dividido por dois')).json().message).toBe('O resultado é 3.');
+    expect((await chat(app, 'calcular um dividido por zero')).json().message).toContain('dividir por zero');
+    const session = randomUUID();
+    expect((await chat(app, 'Jarvis, anotar minha reunião', session)).json().message).toBe('Nota salva: minha reunião');
+    expect((await chat(app, 'notas', session)).json().message).toContain('minha reunião');
+  });
   it('persiste notas após reabrir SQLite, isola sessões e permite excluir', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'jarvis-test-'));
     directories.push(directory);

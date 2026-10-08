@@ -74,18 +74,22 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 ## Funcionalidades implementadas
 
 - Interface em português, tema escuro e detalhes azuis, núcleo animado em CSS/SVG, layouts para desktop e celular.
+- Tela inicial de voz com núcleo central, estados de escuta/processamento/fala, última resposta visível e histórico recolhido. Botão **Chat** abre a interface completa; a escolha de tela permanece ao recarregar.
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
 - Histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
 - Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
-- Captura com `getUserMedia` e `MediaRecorder`, mediante ação e permissão do usuário. Limite de 60 segundos, botão de parada, reprodução local e descarte do áudio.
-- Transcrição via Web Speech API quando disponível. O texto entra no campo para revisão, **sem envio automático**. Digitação permanece disponível.
-- Síntese de voz: botão “Ouvir” e leitura automática opcional, desligada por padrão. Preferência persistida e botão para parar a leitura.
+- Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, sem escutar a própria voz. Cada escuta tem limite de 60 segundos.
+- Modo chat: captura com `getUserMedia` e `MediaRecorder`, mediante ação e permissão, reprodução local e descarte. A transcrição entra no campo para revisão, **sem envio automático** neste modo.
+- Síntese de voz do navegador, seleção de voz em Preferências, repetição da resposta e interrupção. No modo voz, respostas faladas começam ativadas; no chat, a leitura automática é opcional, desligada por padrão e sua preferência é persistida.
+- Interrupção pelo botão central ou Escape; troca de aba/aplicativo pausa a conversa e exige novo toque para retomar. Respostas atrasadas de pedidos interrompidos não iniciam leitura. Digitação permanece disponível.
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.
 - API com validação de corpo, limite de requisições, respostas de erro, cabeçalhos de segurança e consultas SQLite parametrizadas. Nenhuma chamada a modelo externo.
 
 ### Experimente
+
+No celular, abra o site por HTTPS, toque no microfone e permita o acesso. Fale, por exemplo, **“Jarvis, que horas são?”**. O reconhecimento termina quando o navegador detecta o fim da fala; o botão central também conclui a escuta. Para falar novamente sem tocar após cada resposta, marque **Conversa contínua** antes de começar. Se a voz for bloqueada, use **Ouvir resposta** ou o botão de teclado. O aplicativo não escuta ao abrir nem ao recarregar a página.
 
 | Mensagem | Resultado |
 | --- | --- |
@@ -95,21 +99,23 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 | `data` | Data por extenso |
 | `calcular (12 + 8) / 2` | Resultado `10` |
 | `calcular 1,5 * 2` | Resultado `3` |
+| `Jarvis, calcular dois mais cinco` | Resultado `7`, aceitando a forma falada |
 | `anotar revisar portfólio` | Salva a nota |
 | `notas` | Lista as notas desta sessão |
 | `apagar notas` | Exclui todas as notas desta sessão, sem desfazer |
 
-A calculadora aceita números, decimais com vírgula/ponto, `+`, `-`, `*`, `/` e parênteses. Usa um parser limitado, sem `eval`, e rejeita divisão por zero, expressões inválidas e código. Não é uma calculadora científica nem apropriada para cálculos financeiros de precisão.
+A calculadora aceita números, decimais com vírgula/ponto, `+`, `-`, `*`, `/` e parênteses. Também converte números falados de zero a dez e operadores como “mais”, “menos”, “vezes” e “dividido por”. Usa um parser limitado, sem `eval`, e rejeita divisão por zero, expressões inválidas e código. Não é uma calculadora científica nem apropriada para cálculos financeiros de precisão. “Jarvis” no início é um prefixo de comando; **não há detecção de palavra de ativação em segundo plano**.
 
 ## Arquitetura
 
 ```text
 src/
-  App.tsx                 Interface, chat e preferências
-  components/             Núcleo visual e diálogo acessível
+  App.tsx                 Turnos de voz, chat, histórico e preferências
+  components/             VoiceScene, núcleo visual e diálogo acessível
   hooks/                  Captura/transcrição, síntese e controle
   lib/                    Cliente HTTP e histórico validado
   styles.css              Tailwind e estilos responsivos
+  voice.css               Tela central, toque e áreas seguras no celular
 server/
   index.ts                Inicialização e encerramento
   app.ts                  Fastify, validação e arquivos estáticos
@@ -139,11 +145,12 @@ Não há contas, autenticação, criptografia de notas, sincronização entre di
 
 ## Áudio nos navegadores
 
-- Microfone exige `getUserMedia`, `MediaRecorder` e um contexto seguro: HTTPS ou `localhost`. Um endereço HTTP de rede doméstica normalmente não é suficiente. Permissão negada, microfone ausente e falha de captura exibem mensagens e preservam a digitação.
-- O áudio gravado não é enviado à API nem salvo em disco/localStorage. Um `Blob` temporário permite reprodução nesta página e é liberado ao descartar, substituir ou sair. Codec/formato são escolhidos pelo navegador.
+- Microfone exige um contexto seguro: HTTPS ou `localhost`. Um endereço HTTP de rede doméstica normalmente não é suficiente. O modo voz usa diretamente `SpeechRecognition`, sem abrir uma segunda gravação, para evitar disputa pelo microfone no celular. O modo chat exige `getUserMedia` e `MediaRecorder` para gravar. Permissão negada, microfone ausente e falha de captura exibem mensagens e preservam a digitação.
+- No chat, o áudio gravado não é enviado à API nem salvo em disco/localStorage. Um `Blob` temporário permite reprodução nesta página e é liberado ao descartar, substituir, mudar de modo ou sair. Codec/formato são escolhidos pelo navegador. No modo voz, não há gravação reproduzível no aplicativo.
 - `SpeechRecognition`/`webkitSpeechRecognition` variam por navegador, dispositivo, idioma e política. Chrome/Edge podem usar um serviço externo de reconhecimento, que pode exigir rede e enviar áudio ao fornecedor do navegador. A existência da API não garante funcionamento. Não há promessa de transcrição offline.
-- Quando reconhecimento não está disponível, a captura pode permitir apenas ouvir a própria gravação; o pedido deve ser digitado. Ao transcrever, revise o texto e clique em enviar.
+- Quando reconhecimento não está disponível, o modo voz mostra a digitação; no chat, a captura pode permitir apenas ouvir a própria gravação. No chat, revise a transcrição e clique em enviar. No modo voz, a transcrição final é enviada automaticamente: comandos como `apagar notas` executam ao concluir a fala.
 - `speechSynthesis` depende das vozes instaladas, idioma e regras de reprodução do navegador. Algumas plataformas exigem um gesto para tocar áudio e podem bloquear leitura automática; o botão “Ouvir” continua sendo uma tentativa explícita. Texto sempre permanece disponível. Leituras são limitadas aos primeiros 4.000 caracteres.
+- Conversa contínua é por turnos e não permite falar por cima da resposta: primeiro interrompa com o botão central. Erros de reconhecimento/voz e troca de aplicativo desativam a repetição. iOS/Android podem exigir outro toque para cada escuta ou bloquear reprodução; não há escuta com tela bloqueada ou em segundo plano. Não usa ElevenLabs; a voz depende das opções do navegador/sistema e não imita a voz do personagem.
 - No Xbox, entrada/saída de áudio, reconhecimento, permissões, teclado virtual e exposição da Gamepad API precisam ser confirmados no Edge do console. O MVP não promete suporte de voz nesse dispositivo.
 
 ## Testes
@@ -158,7 +165,16 @@ npm run test:e2e
 
 Em Linux, caso faltem bibliotecas do navegador, use `npx playwright install --with-deps chromium` com as permissões adequadas. O runner usa `/usr/bin/chromium` se encontrado; caso contrário, usa o Chromium instalado pelo Playwright. `PLAYWRIGHT_CHROMIUM_EXECUTABLE` permite escolher outro executável.
 
-Vitest cobre cálculos válidos/inválidos, API real por injeção Fastify, validação, fuso, limites, persistência/reabertura SQLite, isolamento entre sessões e recuperação do histórico. Playwright exercita o frontend com a API e SQLite reais em contextos separados de desktop/celular: conversa, recarga, limpeza, notas, falha de rede, fallback de voz, permissão negada, preferências, layout/movimento reduzido, cancelamento de permissão pendente, captura/reprodução/descarte de áudio, transcrição, síntese e controle. A captura usa `MediaRecorder` real com um dispositivo de áudio sintético do Chromium; reconhecimento, síntese e gamepad são simulados. Os testes usam um banco temporário em `/tmp`, não o banco de desenvolvimento. Essas simulações não demonstram a qualidade de um microfone, uma transcrição real ou a compatibilidade física com o Xbox.
+Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fastify, validação, fuso, limites, persistência/reabertura SQLite, isolamento entre sessões e recuperação do histórico. Playwright exercita o frontend com a API e SQLite reais em contextos separados de desktop/celular: conversa, recarga, limpeza, notas, falha de rede, fallback de voz, permissão negada, preferências, layout/movimento reduzido, cancelamento de permissão pendente, captura/reprodução/descarte de áudio, transcrição, síntese e controle. O modo de voz também cobre envio automático, espera pela fala antes de nova escuta, interrupção, resposta atrasada, mudança de aplicativo e histórico. Os testes Pages exercitam esse fluxo sem backend. A captura usa `MediaRecorder` real com um dispositivo de áudio sintético do Chromium; reconhecimento, síntese e gamepad são simulados. Os testes usam um banco temporário em `/tmp`, não o banco de desenvolvimento. Essas simulações não demonstram a qualidade de um microfone, uma transcrição real ou a compatibilidade física com o Xbox.
+
+### Checklist manual no celular
+
+- [ ] Abrir por HTTPS no Chrome/Android e Safari/iOS; testar retrato, paisagem, zoom, teclado virtual e barras do navegador.
+- [ ] Permitir/negar microfone, falar `Jarvis, que horas são?` e confirmar transcrição, envio único e voz real.
+- [ ] Escolher uma voz disponível em português; verificar bloqueio de reprodução automática e **Ouvir resposta**.
+- [ ] Testar conversa contínua, conclusão da escuta e interrupção pelo botão central; registrar quando o navegador exige outro toque.
+- [ ] Trocar de aplicativo, bloquear/desbloquear a tela e retornar; confirmar a pausa e a necessidade de retomar manualmente.
+- [ ] Sem reconhecimento/voz, enviar por digitação; verificar histórico e notas após recarga.
 
 ### Checklist manual no Xbox
 

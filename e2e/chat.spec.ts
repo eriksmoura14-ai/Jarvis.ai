@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
   await page.goto('/');
   await expect(page.getByText('Sistema online', { exact: true })).toBeVisible();
 });

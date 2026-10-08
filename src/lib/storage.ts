@@ -40,3 +40,6 @@ export function loadHistory(): Message[] {
 export function loadVoicePreference(): boolean {
   try { return localStorage.getItem('jarvis.voice.v1') === 'true'; } catch { return false; }
 }
+export function loadView(): 'voice' | 'chat' {
+  try { return localStorage.getItem('jarvis.view.v1') === 'chat' ? 'chat' : 'voice'; } catch { return 'voice'; }
+}

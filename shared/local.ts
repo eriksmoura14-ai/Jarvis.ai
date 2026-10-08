@@ -7,7 +7,8 @@ export class LocalProvider implements AssistantProvider {
   readonly name = 'local';
   constructor(private notes: NoteRepository, private now: () => Date = () => new Date()) {}
   async respond({ message, sessionId, timeZone }: ChatRequest) {
-    const normalized = message.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[?!.,]+$/g, '');
+    const input = message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
+    const normalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[?!.,]+$/g, '');
     const reply = (text: string, command: ChatResponse['command']) => ({ message: text, command, provider: 'local' as const });
     if (/^(ajuda|help|comandos|o que voce (faz|pode fazer))$/.test(normalized)) return reply(HELP, 'help');
     if (/^(oi|ola|bom dia|boa tarde|boa noite|jarvis)$/.test(normalized)) return reply('Olá! Estou por aqui. Posso informar a hora, fazer cálculos e guardar suas notas. Como posso ajudar?', 'greeting');
@@ -17,12 +18,18 @@ export class LocalProvider implements AssistantProvider {
     if (/^(data|hoje|que dia e hoje|qual (e )?a data( de hoje)?)$/.test(normalized)) {
       return reply(`Hoje é ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone }).format(this.now())}.`, 'date');
     }
-    const arithmetic = message.trim().match(/^(?:calcular|calcule|quanto [ée])\s+(.+)$/i);
+    const arithmetic = input.match(/^(?:calcular|calcule|quanto [ée])\s+(.+)$/i);
     if (arithmetic) {
-      try { return reply(`O resultado é ${calculate(arithmetic[1]).toLocaleString('pt-BR', { maximumSignificantDigits: 12 })}.`, 'calculate'); }
+      const numbers: Record<string, string> = { zero: '0', um: '1', uma: '1', dois: '2', duas: '2', tres: '3', quatro: '4', cinco: '5', seis: '6', sete: '7', oito: '8', nove: '9', dez: '10' };
+      const expression = arithmetic[1].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        .replace(/\b(multiplicado por|vezes)\b/g, '*').replace(/\bdividido por\b/g, '/')
+        .replace(/\bmais\b/g, '+').replace(/\bmenos\b/g, '-').replace(/\bvirgula\b/g, ',')
+        .replace(/\b(zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez)\b/g, word => numbers[word])
+        .replace(/[?!.]+$/g, '');
+      try { return reply(`O resultado é ${calculate(expression).toLocaleString('pt-BR', { maximumSignificantDigits: 12 })}.`, 'calculate'); }
       catch (error) { return reply(error instanceof Error ? error.message : 'Não consegui calcular.', 'calculate'); }
     }
-    const note = message.trim().match(/^(?:anotar|anote|nota)\s+(.+)$/is);
+    const note = input.match(/^(?:anotar|anote|nota)\s+(.+)$/is);
     if (note) return reply(this.notes.add(sessionId, note[1].trim()) ? `Nota salva: ${note[1].trim()}` : 'Você atingiu o limite de 100 notas. Use “apagar notas” para liberar espaço.', 'note-add');
     if (/^(notas|minhas notas|listar notas)$/.test(normalized)) {
       const notes = this.notes.list(sessionId);
