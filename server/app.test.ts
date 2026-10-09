@@ -108,6 +108,8 @@ describe('API e comandos locais', () => {
     expect(response.headers['access-control-allow-headers']).toBe('Content-Type');
     expect((await app.inject({ url: '/api/health', headers: { origin: 'https://other.example' } })).statusCode).toBe(403);
     expect((await app.inject({ url: '/api/health', headers: { origin: 'https://eriksmoura14-ai.github.io' } })).statusCode).toBe(200);
+    const proxied = await app.inject({ method: 'POST', url: '/api/chat', headers: { host: '192.168.0.2:5173', origin: 'http://192.168.0.2:5173' }, payload: payload('calcular 2 + 3') });
+    expect(proxied.json()).toMatchObject({ message: 'O resultado é 5.', provider: 'local' });
   });
   it('mantém orçamento de IA ao reabrir SQLite sem armazenar conversas', () => {
     const directory = mkdtempSync(join(tmpdir(), 'jarvis-budget-'));
