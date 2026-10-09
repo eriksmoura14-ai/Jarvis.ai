@@ -35,7 +35,8 @@ test('chat, notas e histórico funcionam sem API no caminho do GitHub Pages', as
 test('limites de dados da versão estática são informados corretamente', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('button', { name: 'Preferências' }).click();
-  await expect(page.getByRole('dialog')).toContainText('sem enviar a conversa a uma API');
+  await expect(page.getByRole('dialog')).toContainText('Notas e cálculos são processados aqui');
+  await expect(page.getByRole('dialog')).toContainText('Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente');
   await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.getByRole('button', { name: 'Comandos', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Guardar uma nota neste navegador');

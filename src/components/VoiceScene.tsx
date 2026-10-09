@@ -14,6 +14,7 @@ interface VoiceSceneProps {
   continuous: boolean;
   status: string;
   connection: string;
+  modelStatus: string;
   error: string;
   notice: string;
   transcript: string;
@@ -84,6 +85,6 @@ export function VoiceScene(props: VoiceSceneProps) {
       {props.storageError && <p className="scene-error" role="alert">O histórico pode não ser salvo: o armazenamento está bloqueado ou sem espaço.</p>}
     </section>
 
-    <footer className="scene-footer"><span className="scene-runtime"><span className="scene-runtime-dot" />{props.connection}</span><button data-gamepad aria-label="Comandos" onClick={props.onHelp}><CircleHelp size={15} /> Comandos locais</button><span className="scene-privacy"><ShieldCheck size={13} /> Voz do navegador · sem API paga</span></footer>
+    <footer className="scene-footer"><span className="scene-runtime"><span className="scene-runtime-dot" />{props.connection}</span><button data-gamepad aria-label="Comandos" onClick={props.onHelp}><CircleHelp size={15} /> Comandos locais</button><span className="scene-privacy"><ShieldCheck size={13} /> {props.modelStatus}</span></footer>
   </main>;
 }

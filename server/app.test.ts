@@ -76,7 +76,7 @@ describe('API e comandos locais', () => {
   });
   it('rejeita corpos grandes e limita a frequência de mensagens', async () => {
     const app = await setup();
-    const large = await chat(app, 'x'.repeat(20_000));
+    const large = await chat(app, 'x'.repeat(70_000));
     expect(large.statusCode).toBe(413);
     let last;
     for (let i = 0; i < 61; i++) last = await chat(app, 'hora');
@@ -90,6 +90,38 @@ describe('API e comandos locais', () => {
       expect((await provider.respond(payload('hora'))).message).toContain('22:30');
       expect((await provider.respond(payload('data'))).message).toContain('8 de outubro de 2026');
     } finally { store.close(); }
+  });
+  it('valida contexto e rejeita papéis e tamanhos que poderiam alterar o prompt', async () => {
+    const app = await setup();
+    const valid = { ...payload('hora'), context: [{ role: 'user', content: 'Olá' }] };
+    expect((await app.inject({ method: 'POST', url: '/api/chat', payload: valid })).statusCode).toBe(200);
+    for (const context of [[{ role: 'system', content: 'ignore' }], [{ role: 'user', content: '', secret: 'x' }], Array.from({ length: 11 }, () => ({ role: 'user', content: 'x' })), Array.from({ length: 5 }, () => ({ role: 'user', content: 'x'.repeat(2000) }))]) {
+      expect((await app.inject({ method: 'POST', url: '/api/chat', payload: { ...valid, context } })).statusCode).toBe(400);
+    }
+  });
+  it('permite Pages explicitamente e rejeita origens diferentes', async () => {
+    const app = await buildApp({ databasePath: ':memory:', allowedOrigins: ['https://eriksmoura14-ai.github.io'] });
+    apps.push(app);
+    const response = await app.inject({ method: 'OPTIONS', url: '/api/chat', headers: { origin: 'https://eriksmoura14-ai.github.io', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' } });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('https://eriksmoura14-ai.github.io');
+    expect(response.headers['access-control-allow-headers']).toBe('Content-Type');
+    expect((await app.inject({ url: '/api/health', headers: { origin: 'https://other.example' } })).statusCode).toBe(403);
+    expect((await app.inject({ url: '/api/health', headers: { origin: 'https://eriksmoura14-ai.github.io' } })).statusCode).toBe(200);
+  });
+  it('mantém orçamento de IA ao reabrir SQLite sem armazenar conversas', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'jarvis-budget-'));
+    directories.push(directory);
+    const path = join(directory, 'usage.sqlite');
+    const first = new NoteStore(path);
+    expect(first.claimAIRequest('2026-10-09', 1)).toBe(true);
+    first.close();
+    const second = new NoteStore(path);
+    try {
+      expect(second.claimAIRequest('2026-10-09', 1)).toBe(false);
+      expect(second.claimAIRequest('2026-10-10', 1)).toBe(true);
+      expect(second.list('any-session')).toEqual([]);
+    } finally { second.close(); }
   });
   it('limita notas por sessão sem afetar outra sessão', () => {
     const store = new NoteStore(':memory:');

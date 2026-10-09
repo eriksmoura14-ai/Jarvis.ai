@@ -1,6 +1,10 @@
 import { buildApp } from './app.js';
+import { readAIConfig } from './providers/model.js';
 
-const app = await buildApp({ logger: true, serveWeb: true });
+const app = await buildApp({ logger: true, serveWeb: true, ai: readAIConfig(process.env),
+  aiDailyLimit: Number(process.env.AI_DAILY_LIMIT ?? 100),
+  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean),
+});
 const shutdown = async () => { await app.close(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);

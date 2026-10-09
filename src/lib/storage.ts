@@ -30,6 +30,7 @@ export function decodeHistory(value: string | null): Message[] {
       const m = item as Partial<Message>;
       return typeof m.id === 'string' && (m.role === 'user' || m.role === 'assistant')
         && typeof m.content === 'string' && m.content.length <= 210_000
+        && (m.provider === undefined || ['local', 'groq', 'ollama'].includes(m.provider))
         && typeof m.createdAt === 'string' && Number.isFinite(Date.parse(m.createdAt));
     }).slice(-MAX_HISTORY);
   } catch { return []; }

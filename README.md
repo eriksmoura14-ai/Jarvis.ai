@@ -4,7 +4,7 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
-**O MVP é um motor de comandos locais, não um modelo generativo de IA.** Não navega na internet, não controla o sistema operacional e não entende pedidos arbitrários. A interface informa esse limite. O código de provedores permite integrar um modelo em uma próxima etapa.
+**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O aplicativo não navega na internet nem controla o sistema operacional; o modelo não executa ferramentas.
 
 ## Começar
 
@@ -59,7 +59,7 @@ O workflow `.github/workflows/pages.yml` testa e publica a build estática em pu
 
 Essa opção funciona em repositório público sem assinatura paga. A build usa o caminho `/Jarvis.ai/`, inclusive nos assets e favicon. Se renomear o repositório, ajuste o `base` do modo `pages` em `vite.config.ts`.
 
-No site Pages, o rótulo **Modo navegador** identifica a execução sem servidor. Hora, data, cálculos e notas usam o mesmo `LocalProvider` do backend. Notas são salvas em `localStorage`, separadas por sessão; nenhuma conversa é enviada à API. O histórico também permanece no navegador. Dados da versão servidor não migram automaticamente para Pages e não há sincronização entre dispositivos. O reconhecimento de voz continua sujeito aos serviços e permissões do próprio navegador.
+No site Pages, o rótulo **Modo navegador** identifica a execução sem servidor. Hora, data, cálculos e notas usam o mesmo `LocalProvider` do backend. Notas são salvas em `localStorage`, separadas por sessão; os comandos locais não são enviados à API. Ao conectar um backend em Preferências, perguntas livres enviam a mensagem e o contexto recente a esse servidor e ao provedor de IA. O histórico continua no navegador. Dados da versão servidor não migram automaticamente para Pages e não há sincronização entre dispositivos. O reconhecimento de voz continua sujeito aos serviços e permissões do próprio navegador.
 
 Para validar antes de publicar:
 
@@ -85,7 +85,8 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Interrupção pelo botão central ou Escape; troca de aba/aplicativo pausa a conversa e exige novo toque para retomar. Respostas atrasadas de pedidos interrompidos não iniciam leitura. Digitação permanece disponível.
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.
-- API com validação de corpo, limite de requisições, respostas de erro, cabeçalhos de segurança e consultas SQLite parametrizadas. Nenhuma chamada a modelo externo.
+- Integração opcional com Groq e Ollama no backend, contexto de até 10 mensagens/8.000 caracteres e identificação de respostas da IA. Os comandos conhecidos têm prioridade e não consomem o modelo. A conexão externa no Pages é configurada por endereço HTTPS, sem chave no frontend.
+- API com validação de corpo/contexto, limite de requisições, orçamento diário de IA persistido em SQLite, cancelamento, respostas de erro, CORS por origem explícita, cabeçalhos de segurança e consultas parametrizadas.
 
 ### Experimente
 
@@ -106,6 +107,14 @@ No celular, abra o site por HTTPS, toque no microfone e permita o acesso. Fale, 
 
 A calculadora aceita números, decimais com vírgula/ponto, `+`, `-`, `*`, `/` e parênteses. Também converte números falados de zero a dez e operadores como “mais”, “menos”, “vezes” e “dividido por”. Usa um parser limitado, sem `eval`, e rejeita divisão por zero, expressões inválidas e código. Não é uma calculadora científica nem apropriada para cálculos financeiros de precisão. “Jarvis” no início é um prefixo de comando; **não há detecção de palavra de ativação em segundo plano**.
 
+## Conectar a conversa com IA
+
+Veja [a instalação do modelo e a conexão pelo celular](docs/ai.md). A integração está implementada, mas esta publicação não inclui uma chave Groq nem um servidor Ollama/hospedagem de backend. Ativar somente a interface não cria um modelo nem um servidor.
+
+- **Groq:** requer chave no backend, modelo disponível e uma conta com cota gratuita; confira os limites e condições no painel do provedor. Não cadastre cobrança para esta etapa.
+- **Ollama:** executa um modelo no seu computador/servidor, sem chave nem cobrança por chamada. Requer instalação, download do modelo, memória suficiente e a máquina ligada.
+- O GitHub Pages continua hospedando apenas a interface. Para celular fora da rede local, o backend precisa estar online em HTTPS.
+
 ## Arquitetura
 
 ```text
@@ -124,20 +133,23 @@ server/
   providers/
     types.ts              Contrato AssistantProvider
     local.ts              Motor local de comandos
+    model.ts              Chamadas Groq/Ollama e configuração segura
+    hybrid.ts             Prioridade local e limites de IA
 shared/contracts.ts       Tipos de mensagem e contratos HTTP
+shared/context.ts         Seleção limitada do contexto recente
 e2e/                      Testes Playwright
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
 Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando o comando usa notas → resposta em texto. `GET /api/health` verifica a API. No modo Pages: React → adaptador `src/lib/browser.ts` → o mesmo provedor em `shared/local.ts` → `localStorage`, sem requisições à API. A calculadora comum fica em `shared/calculator.ts`. O horário usa o fuso IANA informado pelo navegador, validado no backend quando há API.
 
-`buildApp({ provider })` permite injetar outro `AssistantProvider`. Uma futura integração deve ampliar os metadados do contrato compartilhado para o novo provedor e manter credenciais, chamadas ao modelo, custos e limites no backend. Esta versão não inclui SDK de IA nem campos para chaves.
+`buildApp({ ai })` compõe o motor local com `ModelProvider`; `buildApp({ provider })` permite injetar outro provedor. Pedidos reconhecidos são locais. Pedidos desconhecidos usam o modelo somente quando configurado. Não há SDK de IA no frontend: as chamadas HTTP e a chave Groq ficam no backend. No Pages, comandos conhecidos continuam no navegador e apenas perguntas livres seguem para o backend configurado.
 
 ### Dados e privacidade
 
-Os parágrafos abaixo descrevem o **modo servidor**. No modo Pages, tanto o histórico quanto as notas ficam no navegador e a conversa não é enviada ao backend. Os dois modos não compartilham notas automaticamente.
+Os parágrafos abaixo descrevem o **modo servidor**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
 
-O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem.
+O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem. Quando a IA está ativada, o provedor recebe a pergunta e até 10 mensagens recentes (máximo de 8.000 caracteres de contexto); consulte sua política de retenção. A tabela `ai_usage` mantém apenas contagens diárias, não o texto da conversa.
 
 As **notas** ficam em `data/jarvis.sqlite`, incluindo os arquivos de WAL do SQLite, e pertencem ao UUID guardado em `jarvis.session.v1`. Copiar esse UUID possibilita acessar as notas da sessão: ele não substitui autenticação. Limpar os dados do site ou usar outro navegador cria outra sessão, sem recuperar as notas anteriores. Para removê-las antes de limpar o site, use `apagar notas`.
 
@@ -165,7 +177,7 @@ npm run test:e2e
 
 Em Linux, caso faltem bibliotecas do navegador, use `npx playwright install --with-deps chromium` com as permissões adequadas. O runner usa `/usr/bin/chromium` se encontrado; caso contrário, usa o Chromium instalado pelo Playwright. `PLAYWRIGHT_CHROMIUM_EXECUTABLE` permite escolher outro executável.
 
-Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fastify, validação, fuso, limites, persistência/reabertura SQLite, isolamento entre sessões e recuperação do histórico. Playwright exercita o frontend com a API e SQLite reais em contextos separados de desktop/celular: conversa, recarga, limpeza, notas, falha de rede, fallback de voz, permissão negada, preferências, layout/movimento reduzido, cancelamento de permissão pendente, captura/reprodução/descarte de áudio, transcrição, síntese e controle. O modo de voz também cobre envio automático, espera pela fala antes de nova escuta, interrupção, resposta atrasada, mudança de aplicativo e histórico. Os testes Pages exercitam esse fluxo sem backend. A captura usa `MediaRecorder` real com um dispositivo de áudio sintético do Chromium; reconhecimento, síntese e gamepad são simulados. Os testes usam um banco temporário em `/tmp`, não o banco de desenvolvimento. Essas simulações não demonstram a qualidade de um microfone, uma transcrição real ou a compatibilidade física com o Xbox.
+Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fastify, validação, fuso, limites, persistência/reabertura SQLite, isolamento entre sessões e recuperação do histórico. Playwright exercita o frontend com a API e SQLite reais em contextos separados de desktop/celular: conversa, recarga, limpeza, notas, falha de rede, fallback de voz, permissão negada, preferências, layout/movimento reduzido, cancelamento de permissão pendente, captura/reprodução/descarte de áudio, transcrição, síntese e controle. O modo de voz também cobre envio automático, espera pela fala antes de nova escuta, interrupção, resposta atrasada, mudança de aplicativo e histórico. Os testes Pages exercitam esse fluxo sem backend. Testes adicionais verificam o contrato dos provedores, contexto, limites, CORS, erros sanitizados e cancelamento do modelo. Um servidor HTTP controlado simula a API Ollama; isso valida a conexão, sem demonstrar uma inferência real. A captura usa `MediaRecorder` real com um dispositivo de áudio sintético do Chromium; reconhecimento, síntese e gamepad são simulados. Os testes usam um banco temporário em `/tmp`, não o banco de desenvolvimento. Essas simulações não demonstram a qualidade de um microfone, uma transcrição real ou a compatibilidade física com o Xbox.
 
 ### Checklist manual no celular
 
@@ -190,9 +202,9 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 
 ## Próximos passos
 
-1. Validar em Xbox real, Safari/iOS, Edge desktop e Android com dispositivos físicos.
+1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
 2. Acrescentar autenticação, gestão de sessões, exclusão individual e backup/exportação de notas.
-3. Implementar um provedor de modelo local ou integração opcional no backend, com escolha explícita do usuário e limites de consumo.
+3. Acrescentar execução de ferramentas por solicitações estruturadas do modelo, com validação e confirmação para ações que excluam dados; atualmente só comandos explícitos executam funções.
 4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 
