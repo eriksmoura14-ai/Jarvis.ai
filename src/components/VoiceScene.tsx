@@ -86,7 +86,7 @@ export function VoiceScene(props: VoiceSceneProps) {
       <div className="scene-control-caption">{props.phase === 'requesting' ? 'Toque para cancelar' : props.phase === 'recording' ? 'Toque para concluir a fala' : busy ? 'Toque para interromper' : props.canListen ? 'Falar com JARVIS' : 'Digite para conversar'}</div>
 
       <label className="scene-continuous"><input data-gamepad type="checkbox" checked={props.continuous} disabled={!props.canListen || !props.speechSupported || !props.sound} onChange={event => props.onContinuous(event.target.checked)} /><span>Conversa contínua</span><span className="scene-continuous-detail">Volta a ouvir depois da resposta</span></label>
-      {props.reply && props.speechSupported && <button data-gamepad className="scene-replay" aria-label="Ouvir resposta" onClick={props.onReplay}><Volume2 size={14} /> Ouvir resposta</button>}
+      {!props.pending && props.reply && props.speechSupported && <button data-gamepad className="scene-replay" aria-label="Ouvir resposta" onClick={props.onReplay}><Volume2 size={14} /> Ouvir resposta</button>}
 
       {typing && <form id="scene-typing" className="scene-typing" onSubmit={submit}>
         <label htmlFor="message-input">Sua mensagem</label>

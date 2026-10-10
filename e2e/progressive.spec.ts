@@ -43,11 +43,13 @@ test('texto progressivo aparece antes do fim, sem salvar ou falar o rascunho', a
   await streamFixture(page); await type(page);
   await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
   await expect(page.getByRole('status')).toContainText('Processando');
+  await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('jarvis.history.v1'))).not.toContain('Começo da resposta.');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
   await finishStream(page, { type: 'result', response: result('Resposta final confirmada.') });
   await expect(page.locator('.scene-reply')).toContainText('Resposta final confirmada.');
   await expect(page.locator('.scene-reply')).not.toContainText('Começo da resposta.');
+  await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Preferências' }).click();
   const timings = page.getByRole('region', { name: 'Tempos da conversa' });
   await expect(timings).toContainText('Primeiro texto na tela');
