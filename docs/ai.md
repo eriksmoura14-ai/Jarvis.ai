@@ -1,6 +1,6 @@
 # Conversa com IA e contexto
 
-O JARVIS mantém o motor de comandos e acrescenta conversa livre por um modelo no backend. O modelo recebe a pergunta atual e até 10 mensagens recentes, limitadas a 8.000 caracteres no total e 2.000 por mensagem. Limpar a conversa limpa esse contexto. O contexto é enviado pelo navegador a cada pedido; o backend não guarda as mensagens nem compartilha conversas entre sessões/dispositivos.
+O JARVIS mantém o motor de comandos e acrescenta conversa livre por um modelo no backend. O modelo recebe a pergunta atual e até 10 mensagens recentes, limitadas a 8.000 caracteres no total e 2.000 por mensagem. Limpar a conversa limpa esse contexto. Sem login pessoal, o contexto vem do navegador e o backend não guarda nem compartilha as mensagens. No [modo pessoal](personal.md), o contexto vem do histórico ativo no servidor e das memórias salvas; acompanha sua conta entre aparelhos, ignorando o contexto enviado pelo cliente. Correções/exclusões de memória reiniciam esse contexto sem apagar o histórico visível.
 
 Comandos como `hora`, `calcular ...`, `anotar ...` e `notas` têm prioridade e continuam locais, exceto quando você ativa explicitamente o modo de pesquisa. Use `pesquise <assunto>` para consultar a web com fontes; veja [como a pesquisa funciona](search.md). O backend fornece trechos reais de busca à IA, sem executar ações solicitadas por ela: pedir “guarde isso” ao modelo não salva uma nota. Use `anotar <texto>`. No GitHub Pages, comandos e notas continuam no navegador mesmo com backend conectado.
 
@@ -86,7 +86,7 @@ No celular:
 2. Abra **Preferências → Conversa com IA**.
 3. Informe a origem HTTPS do seu backend, por exemplo `https://seu-backend.example` (substitua pelo endereço real), sem caminho ou credenciais.
 4. Toque em **Conectar IA**. A conexão só é salva quando o backend informa um modelo configurado.
-5. Feche Preferências e faça a primeira pergunta. O aplicativo envia texto e contexto; o áudio continua usando os recursos do navegador.
+5. Feche Preferências e faça a primeira pergunta. O aplicativo envia texto e contexto. No Pages, o áudio usa os recursos do navegador; no servidor pessoal, existe também a [opção ElevenLabs](voice.md).
 
 O endereço fica no `localStorage` deste navegador. Para remover a conexão, use **Usar somente comandos locais**. Isso preserva histórico e notas. Se o backend ficar indisponível, comandos locais do Pages continuam funcionando e perguntas livres preservam o texto para tentar novamente.
 

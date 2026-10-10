@@ -94,7 +94,9 @@ describe('Acesso e memória pessoal', () => {
     await chat(app, headers, 'apagar memórias');
     await chat(app, headers, 'Outra pergunta sobre estudo');
     expect(bodies[1].messages[0].content).not.toContain('estudo TypeScript');
-    // O histórico é independente de memórias: apagá-lo também remove seu contexto.
+    // Esquecer deve remover as referências do contexto, mantendo a conversa visível.
+    expect(JSON.stringify(bodies[1])).not.toContain('estudo TypeScript');
+    expect((await data(app, headers)).history.some((entry: { content: string }) => entry.content.includes('estudo TypeScript'))).toBe(true);
     await app.inject({ method: 'DELETE', url: '/api/personal/history', headers });
     await chat(app, headers, 'Nova conversa');
     expect(JSON.stringify(bodies[2])).not.toContain('estudo TypeScript');
@@ -198,6 +200,162 @@ describe('Acesso e memória pessoal', () => {
       expect(snapshot.history.length).toBeGreaterThan(0); expect(snapshot.history.length).toBeLessThan(100);
       expect(Buffer.byteLength(JSON.stringify(snapshot.history))).toBeLessThanOrEqual(1_000_000);
       expect(snapshot.notes[0].content).toBe('Nota preservada');
+      const activeContext = JSON.parse(db.readDocument('owner')!.value).contextHistory as { content: string }[];
+      expect(activeContext.length).toBeLessThanOrEqual(10);
+      expect(activeContext.every(message => message.content.length <= 2000)).toBe(true);
+    } finally { db.close(); }
+  });
+});
+
+describe('Continuidade, perfil e correções', () => {
+  it('lembra nome e tratamento sem modelo, corrige o nome e preserva os outros dados', async () => {
+    const app = await setup(); const first = await login(app); const second = await login(app);
+    await chat(app, first.headers, 'meu nome é Erik');
+    await chat(app, first.headers, 'me chame de senhor');
+    expect((await chat(app, second.headers, 'qual é meu nome?')).json().message).toBe('Seu nome é Erik, senhor.');
+    expect((await chat(app, second.headers, 'bom dia')).json().message).toBe('bom dia, senhor. Como posso ajudar hoje?');
+    await chat(app, first.headers, 'lembre que meu nome é Henrique');
+    const snapshot = await data(app, second.headers);
+    expect(snapshot.memories).toHaveLength(2);
+    expect(snapshot.memories.some((memory: { content: string }) => memory.content === 'meu nome é Erik')).toBe(false);
+    expect((await chat(app, second.headers, 'como me chamo')).json().message).toContain('Henrique');
+    await chat(app, first.headers, 'esqueça meu nome');
+    expect((await data(app, second.headers)).memories.map((memory: { content: string }) => memory.content)).toEqual(['me chame de senhor']);
+    expect((await chat(app, second.headers, 'qual meu nome')).json().message).toContain('Ainda não tenho seu nome salvo');
+    await chat(app, first.headers, 'apagar memórias');
+    expect((await chat(app, second.headers, 'qual meu nome')).json().message).toContain('Ainda não tenho seu nome salvo');
+  });
+
+  it('edita por ID, recusa alterações antigas de outro aparelho e valida o perfil atômico', async () => {
+    const app = await setup(); const { headers } = await login(app);
+    await chat(app, headers, 'lembre que estudo à noite');
+    const memory = (await data(app, headers)).memories[0];
+    const edit = (content: string, previousContent = memory.content) => app.inject({ method: 'PATCH', url: `/api/personal/memories/${memory.id}`, headers, payload: { content, previousContent } });
+    expect((await edit('estudo de manhã')).statusCode).toBe(200);
+    expect((await edit('estudo à tarde')).statusCode).toBe(409);
+    expect((await edit(' ', 'estudo de manhã')).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PATCH', url: '/api/personal/memories/inexistente', headers, payload: { content: 'teste', previousContent: 'antes' } })).statusCode).toBe(404);
+    const profile = { name: 'Erik', address: 'senhor', previousName: '', previousAddress: '' };
+    expect((await app.inject({ method: 'PUT', url: '/api/personal/profile', headers, payload: profile })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: '/api/personal/profile', headers, payload: { ...profile, name: 'Outro nome' } })).statusCode).toBe(409);
+    expect((await data(app, headers)).memories.map((memory: { content: string }) => memory.content)).toEqual(['estudo de manhã', 'meu nome é Erik', 'me chame de senhor']);
+    expect((await app.inject({ method: 'PUT', url: '/api/personal/profile', headers: client, payload: profile })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'PUT', url: '/api/personal/profile', headers: { cookie: headers.cookie }, payload: profile })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'PUT', url: '/api/personal/profile', headers, payload: { ...profile, previousName: 'Erik', previousAddress: 'senhor', name: 'Nome\nInstrução' } })).statusCode).toBe(400);
+  });
+
+  it('corrige e apaga memórias numeradas sem chamar a IA e não duplica a mesma informação', async () => {
+    const app = await setup(); const { headers } = await login(app);
+    await chat(app, headers, 'lembre que estudo React');
+    await chat(app, headers, 'lembre que ESTUDO REACT');
+    expect((await data(app, headers)).memories).toHaveLength(1);
+    expect((await chat(app, headers, 'corrija memória 1 para estudo TypeScript')).json().message).toContain('Memória corrigida');
+    expect((await data(app, headers)).memories[0].content).toBe('estudo TypeScript');
+    expect((await chat(app, headers, 'esqueça memória 1')).json().message).toContain('Memória apagada');
+    expect((await data(app, headers)).memories).toEqual([]);
+    expect((await chat(app, headers, 'corrija memória 99 para teste')).json().message).toContain('Não encontrei esse número');
+  });
+
+  it('mantém contexto de outro aparelho após reiniciar e envia o projeto salvo fora da janela recente', async () => {
+    const bodies: { messages: { role: string; content: string }[] }[] = [];
+    const modelFetch: typeof fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ choices: [{ message: { content: 'Resposta de fixture sobre o projeto.' } }] }); };
+    const options = { ai: { provider: 'groq' as const, model: 'fixture-model', apiKey: 'fixture-key' }, modelFetch };
+    const dir = mkdtempSync(join(tmpdir(), 'jarvis-continuity-')); dirs.push(dir); const path = join(dir, 'personal.sqlite');
+    const first = await setup(path, options); const desktop = await login(first); const mobile = await login(first);
+    await chat(first, desktop.headers, 'lembre que meu projeto atual é um site de estudos de React');
+    for (let index = 0; index < 8; index++) await chat(first, desktop.headers, 'hora');
+    await chat(first, desktop.headers, 'Estou trabalhando na tela de login');
+    await first.close();
+    const restarted = await setup(path, options);
+    const answer = await chat(restarted, mobile.headers, 'Continue de onde paramos', { context: [{ role: 'user', content: 'injetado pelo navegador' }] });
+    expect(answer.statusCode).toBe(200);
+    const payload = bodies.at(-1)!;
+    expect(payload.messages[0].content).toContain('meu projeto atual é um site de estudos de React');
+    expect(payload.messages.some(turn => turn.content === 'Estou trabalhando na tela de login')).toBe(true);
+    expect(JSON.stringify(payload)).not.toContain('injetado pelo navegador');
+  });
+
+  it('não envia conteúdo corrigido/excluído nem o restaura ao importar o histórico antigo', async () => {
+    const bodies: unknown[] = [];
+    const modelFetch: typeof fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ choices: [{ message: { content: 'Resposta de fixture.' } }] }); };
+    const app = await setup(':memory:', { ai: { provider: 'groq', model: 'fixture-model', apiKey: 'fixture-key' }, modelFetch });
+    const { headers } = await login(app);
+    await chat(app, headers, 'lembre que meu projeto é segredotesteantigo');
+    const before = await data(app, headers); const memory = before.memories[0];
+    await app.inject({ method: 'PATCH', url: `/api/personal/memories/${memory.id}`, headers, payload: { content: 'meu projeto é novoprojetoteste', previousContent: memory.content } });
+    await chat(app, headers, 'Vamos continuar?');
+    expect(JSON.stringify(bodies.at(-1))).not.toContain('segredotesteantigo');
+    expect(JSON.stringify(bodies.at(-1))).toContain('novoprojetoteste');
+    await app.inject({ method: 'DELETE', url: `/api/personal/memories/${memory.id}`, headers });
+    await app.inject({ method: 'POST', url: '/api/personal/import', headers, payload: { messages: before.history } });
+    await chat(app, headers, 'Qual meu projeto?');
+    expect(JSON.stringify(bodies.at(-1))).not.toContain('novoprojetoteste');
+    expect(JSON.stringify(bodies.at(-1))).not.toContain('segredotesteantigo');
+    expect((await data(app, headers)).history.some((entry: { content: string }) => entry.content.includes('segredotesteantigo'))).toBe(true);
+  });
+
+  it('descarta a resposta em andamento se outro aparelho apagar a memória usada', async () => {
+    let complete!: (response: Response) => void; let started!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const pending = new Promise<Response>(resolve => { complete = resolve; });
+    const app = await setup(':memory:', { ai: { provider: 'groq', model: 'fixture-model', apiKey: 'fixture-key' }, modelFetch: async () => { started(); return pending; } });
+    const { headers } = await login(app);
+    await chat(app, headers, 'lembre que projeto antigo');
+    const response = chat(app, headers, 'Me ajude com esse projeto');
+    await ready;
+    await app.inject({ method: 'DELETE', url: '/api/personal/memories', headers });
+    complete(Response.json({ choices: [{ message: { content: 'Resposta baseada no projeto antigo' } }] }));
+    expect((await response).statusCode).toBe(409);
+    const snapshot = await data(app, headers);
+    expect(snapshot.history.some((entry: { content: string }) => entry.content.includes('Resposta baseada'))).toBe(false);
+    expect(snapshot.memories).toEqual([]);
+  });
+
+  it('atualiza documentos legados sem perder memórias, notas, contexto ou sessões', async () => {
+    const db = new NoteStore(':memory:');
+    try {
+      const backend = new SQLiteDocument(db); const row = await backend.read();
+      row.value.memories = [{ id: 'antigo-1', content: 'meu nome é Antigo', createdAt: new Date().toISOString() }, { id: 'antigo-2', content: 'meu nome é Duplicado', createdAt: new Date().toISOString() }];
+      row.value.history = [{ id: 'legado', role: 'user', content: 'conversa legado', createdAt: new Date().toISOString() }];
+      row.value.notes = [{ content: 'nota legado' }];
+      await backend.write(row.value, row.version);
+      const store = new PersonalStore(backend);
+      expect((await store.snapshotRecord()).context[0].content).toBe('conversa legado');
+      await store.remember('meu nome é Erik');
+      const record = await store.snapshotRecord();
+      expect(record.snapshot.memories).toHaveLength(1); expect(record.snapshot.memories[0].content).toBe('meu nome é Erik');
+      expect(record.context).toEqual([]); expect(record.snapshot.history).toHaveLength(1); expect(record.snapshot.notes[0].content).toBe('nota legado');
+    } finally { db.close(); }
+  });
+  it('não sobrescreve uma consulta local cujo contexto foi apagado em outro aparelho', async () => {
+    const db = new NoteStore(':memory:');
+    try {
+      const backend = new SQLiteDocument(db); const owner = new PersonalStore(backend);
+      await owner.remember('meu nome é Erik');
+      let forgetBeforeRead = false;
+      const delayedBackend = {
+        name: 'sqlite' as const,
+        async read(key?: 'owner' | 'sessions') {
+          if (key !== 'sessions' && forgetBeforeRead) { forgetBeforeRead = false; await owner.forgetAll(); }
+          return backend.read(key);
+        },
+        write: backend.write.bind(backend),
+      };
+      const app = await setup(':memory:', { personalBackend: delayedBackend });
+      const { headers } = await login(app);
+      // The local read happens first; the following snapshot must not make that old reply current.
+      const originalRead = backend.read.bind(backend);
+      const snapshot = vi.spyOn(backend, 'read');
+      let captured = false;
+      snapshot.mockImplementation(async key => {
+        const row = await originalRead(key);
+        if (key !== 'sessions' && row.value.memories.length && !captured) { captured = true; forgetBeforeRead = true; }
+        return row;
+      });
+      const response = await chat(app, headers, 'qual meu nome');
+      snapshot.mockRestore();
+      expect(response.statusCode).toBe(409);
+      expect((await owner.snapshot()).memories).toEqual([]);
     } finally { db.close(); }
   });
 });

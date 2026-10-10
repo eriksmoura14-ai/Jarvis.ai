@@ -20,11 +20,21 @@ test('login, memória por consentimento, recarga sem cache privado e logout', as
   await memory(page); await page.getByLabel('O que deseja que o JARVIS lembre?').fill('Prefiro estudar à noite');
   await page.getByRole('button', { name: 'Guardar memória' }).click();
   await expect(page.getByText('Prefiro estudar à noite', { exact: true })).toBeVisible();
-  await page.reload(); await memory(page); await expect(page.getByText('Prefiro estudar à noite', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Editar memória: Prefiro estudar à noite' }).click();
+  await page.getByLabel('Editar informação').fill('Prefiro estudar de manhã');
+  await page.getByRole('button', { name: 'Salvar alteração', exact: true }).click();
+  await expect(page.getByText('Prefiro estudar de manhã', { exact: true })).toBeVisible();
+  await expect(page.getByText('Prefiro estudar à noite', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Editar memória: Prefiro estudar de manhã' }).click();
+  await page.getByLabel('Editar informação').fill('Alteração que não será salva');
+  await page.getByRole('button', { name: 'Cancelar edição' }).click();
+  await expect(page.getByText('Prefiro estudar de manhã', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.reload(); await memory(page); await expect(page.getByText('Prefiro estudar de manhã', { exact: true })).toBeVisible();
   const cache = await page.evaluate(() => localStorage.getItem('jarvis.history.v1'));
   expect(cache).toBeNull();
-  await page.getByRole('button', { name: 'Apagar memória: Prefiro estudar à noite' }).click();
-  await expect(page.getByText('Prefiro estudar à noite', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Apagar memória: Prefiro estudar de manhã' }).click();
+  await expect(page.getByText('Prefiro estudar de manhã', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Sair da conta' }).click();
   await expect(page.getByLabel('Senha pessoal')).toBeVisible();
   expect((await page.request.get('/api/personal/data')).status()).toBe(401);
@@ -34,9 +44,27 @@ test('outro aparelho recebe história e notas; limpar sincroniza e preserva nota
   await enter(page);
   await page.request.delete('/api/personal/history', { headers: client });
   await page.request.post('/api/chat', { headers: client, data: { message: 'anotar lembrar consulta', sessionId: crypto.randomUUID(), timeZone: 'America/Sao_Paulo' } });
+  await memory(page);
+  await page.getByLabel('Seu nome', { exact: true }).fill('Erik');
+  await page.getByLabel('Como o JARVIS deve chamar você?').fill('senhor');
+  await page.getByRole('button', { name: 'Salvar perfil', exact: true }).click();
+  await expect(page.getByText('meu nome é Erik', { exact: true })).toBeVisible();
   const secondContext = await browser.newContext({ baseURL: test.info().project.use.baseURL });
   try {
     const second = await secondContext.newPage(); await enter(second);
+    await memory(second);
+    await expect(second.getByLabel('Seu nome', { exact: true })).toHaveValue('Erik');
+    await expect(second.getByLabel('Como o JARVIS deve chamar você?')).toHaveValue('senhor');
+    // Start an unsaved edit on the first device, then change the same profile on the second.
+    await page.getByLabel('Seu nome', { exact: true }).fill('Primeiro aparelho');
+    await second.getByLabel('Seu nome', { exact: true }).fill('Segundo aparelho');
+    await second.getByRole('button', { name: 'Salvar perfil', exact: true }).click();
+    await expect(second.getByText('meu nome é Segundo aparelho', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Salvar perfil', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Seu perfil mudou em outro aparelho');
+    const nameReply = await second.request.post('/api/chat', { headers: client, data: { message: 'qual é meu nome', sessionId: crypto.randomUUID(), timeZone: 'America/Sao_Paulo' } });
+    expect((await nameReply.json()).message).toBe('Seu nome é Segundo aparelho, senhor.');
+    await second.getByRole('button', { name: 'Fechar janela' }).click();
     await second.getByRole('button', { name: 'Abrir histórico', exact: true }).click();
     await expect(second.getByText('anotar lembrar consulta', { exact: true })).toBeVisible();
     await second.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
@@ -44,6 +72,7 @@ test('outro aparelho recebe história e notas; limpar sincroniza e preserva nota
     await expect(second.getByRole('dialog')).toHaveCount(0);
     const state = await (await page.request.get('/api/personal/data')).json();
     expect(state.history).toHaveLength(0); expect(state.notes.some((note: { content: string }) => note.content === 'lembrar consulta')).toBe(true);
+    expect(state.memories.some((memory: { content: string }) => memory.content === 'meu nome é Segundo aparelho')).toBe(true);
     await page.reload(); await page.getByRole('button', { name: 'Abrir histórico', exact: true }).click();
     await expect(page.getByText('anotar lembrar consulta', { exact: true })).toHaveCount(0);
   } finally { await secondContext.close(); }

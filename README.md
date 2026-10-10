@@ -2,7 +2,7 @@
 
 Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS. React, TypeScript, Vite, Tailwind CSS, Fastify e SQLite. Sem API paga, cartão de crédito ou credenciais no frontend.
 
-**Uso pessoal com login:** [ativar senha, memória e sincronização no Render com Supabase](docs/personal.md). A implementação está disponível; o acesso só fica protegido depois de configurar `JARVIS_PASSWORD`.
+**Uso pessoal com login:** [ativar senha, perfil, memória editável e sincronização no Render com Supabase](docs/personal.md). Nome e tratamento acompanham sua conta. Correções e exclusões reiniciam o contexto enviado à IA, preservando o histórico visível. O acesso só fica protegido depois de configurar `JARVIS_PASSWORD`.
 
 **Voz mais natural:** [ativar ElevenLabs no plano Free](docs/voice.md), com chave somente no backend e botão **Testar ElevenLabs**, que usa só a voz natural e mostra erros. O modo Automática permite a voz do aparelho como alternativa. Precisa de conta, chave e voz configuradas; a voz padrão continua sem credenciais.
 

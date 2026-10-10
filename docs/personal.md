@@ -47,23 +47,52 @@ conexão incompleta nem troca automaticamente para armazenamento temporário.
 
 ## Usar
 
+- Em **Preferências → Memória pessoal**, preencha **Seu nome** e **Como o JARVIS
+  deve chamar você?**, por exemplo `senhor`. Clique em **Salvar perfil**. O perfil
+  acompanha sua conta nos aparelhos; usa até duas das 30 memórias. Um campo vazio
+  remove aquela informação. Não é necessário configurar novas variáveis no Render
+  nem executar outro script SQL no Supabase.
+- `meu nome é Erik` e `me chame de senhor` são pedidos explícitos de perfil. Um
+  novo nome ou tratamento substitui o anterior, incluindo duplicatas antigas
+  reconhecidas, sem apagar suas outras memórias. `qual é meu nome` consulta o nome
+  salvo sem gastar uma chamada de IA. Saudações como `bom dia` usam o tratamento.
+- `esqueça meu nome` remove o nome salvo, preservando a forma de tratamento.
 - `lembre que estudo programação à noite` salva uma preferência explícita.
+- Para projetos que devem continuar conhecidos além das últimas mensagens, diga
+  `lembre que meu projeto atual é um site de estudos de React`. As memórias salvas
+  acompanham as perguntas à IA mesmo após recarregar ou mudar de aparelho.
 - `minhas memórias` ou `o que você lembra sobre mim` consulta as preferências.
+- `corrija memória 1 para estudo de manhã` substitui a informação de número 1.
+  `esqueça memória 1` remove somente aquela memória. Consulte a lista atual antes
+  de usar números, pois a ordem pode mudar quando outro aparelho fizer alterações.
 - `apagar memórias` remove todas as preferências salvas.
-- **Preferências → Memória pessoal** permite adicionar e excluir individualmente.
+- **Preferências → Memória pessoal** permite adicionar, editar e excluir por ID.
+  Uma edição é recusada se outro aparelho já mudou seu conteúdo ou o perfil;
+  descarte a edição, confira os valores atualizados e tente novamente.
 - `anotar <texto>`, `notas` e `apagar notas` passam a usar a mesma conta nos aparelhos.
 - As últimas 100 mensagens ficam na conta. A interface atualiza ao voltar para a
   aba e a cada 10 segundos enquanto está visível. A IA recebe o contexto recente
   armazenado no servidor, permitindo continuar uma conversa em outro aparelho.
+  A janela enviada à IA é de até 10 mensagens e 8.000 caracteres, com até 2.000
+  caracteres por mensagem. Não equivale a recordar todo o histórico. A IA não
+  consulta automaticamente notas; use `notas` para trazê-las à conversa.
 - **Limpar conversa** remove o histórico da conta, preservando notas e memórias.
   Respostas que terminarem depois dessa limpeza não restauram o histórico apagado.
 - **Sair da conta** revoga a sessão do aparelho. Mudar `JARVIS_PASSWORD` e reiniciar
   o serviço invalida todas as sessões anteriores; os dados da conta são preservados.
 
-Memórias não são extraídas automaticamente da conversa. Preferências salvas podem
+Memórias não são extraídas automaticamente de conversas livres. Declarações
+completas de nome/tratamento, os comandos acima e o painel são pedidos explícitos.
+Preferências salvas podem
 ser enviadas ao provedor de IA quando você faz uma pergunta ou pede um resumo de
-pesquisa. **Apagar uma memória não apaga conversas que mencionem essa informação**:
-limpe também o histórico para removê-la do contexto recente. Exclusões são feitas
+pesquisa. **Corrigir/apagar uma memória ou alterar o perfil reinicia o contexto
+recente enviado à IA**, preservando as outras memórias salvas. As conversas antigas
+permanecem visíveis, mas não são reutilizadas como contexto; use **Limpar conversa**
+para apagá-las também. Reimportar histórico antigo depois desse reinício não
+restaura referências no contexto. Uma resposta em andamento baseada no contexto
+anterior é descartada com pedido para reenviar a pergunta. Isso não remove outras
+memórias/notas nas quais você tenha salvo a mesma informação, nem impede que você
+a conte novamente. Exclusões são feitas
 no banco ativo; backups do provedor e dados já enviados a serviços externos seguem
 as políticas desses serviços. Não há criptografia adicional de ponta a ponta.
 
@@ -125,7 +154,7 @@ permitidas pelo CORS. Health e estado do acesso permanecem públicos, sem dados
 pessoais. O backend não usa Supabase Auth: a senha única é verificada no Fastify.
 
 `PersonalStore` mantém até 100 mensagens, 100 notas e 30 memórias de 500 caracteres.
-O histórico também tem limite total de 1 MB; as mensagens mais antigas saem primeiro se ele for atingido. Respostas pessoais têm até 6.000 caracteres. Listas longas são limitadas no chat, e as notas completas aparecem no painel de memória. O limite diário de IA e as sessões também ficam no armazenamento durável. A
+O histórico também tem limite total de 1 MB; as mensagens mais antigas saem primeiro se ele for atingido. Respostas pessoais têm até 6.000 caracteres. O contexto para o modelo é guardado separadamente do histórico visível, com compatibilidade para documentos antigos; não há migração destrutiva ou nova tabela. Listas longas são limitadas no chat, e as notas completas aparecem no painel de memória. O limite diário de IA e as sessões também ficam no armazenamento durável. A
 implementação usa um documento JSON para o dono e outro para as sessões, com compare-and-swap por versão
 e até seis tentativas para não sobrescrever atualizações concorrentes. A sincronização usa ETag para não baixar novamente um histórico inalterado. Não é
 arquitetura para múltiplos usuários. Supabase é acessado exclusivamente no servidor

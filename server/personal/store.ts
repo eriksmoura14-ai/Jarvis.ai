@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Message, PersonalMemory, PersonalSnapshot, NoteRepository } from '../../shared/contracts.js';
+import { MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type Message, type PersonalMemory, type PersonalSnapshot, type NoteRepository } from '../../shared/contracts.js';
 import type { NoteStore } from '../database.js';
+import { conversationContext } from '../../shared/context.js';
+import { memorySlot, personalProfile, sameMemory } from '../../shared/memory.js';
 
 export class PersonalError extends Error {
   constructor(message: string, readonly statusCode = 503) { super(message); }
@@ -9,6 +11,7 @@ interface Document {
   history: Message[]; memories: PersonalMemory[]; notes: { content: string }[];
   generation: number; usage: { day: string; count: number };
   sessions: { hash: string; version: string; expires: number }[];
+  contextHistory?: Message[];
 }
 const empty = (): Document => ({ history: [], memories: [], notes: [], generation: 0, usage: { day: '', count: 0 }, sessions: [] });
 function boundedHistory(messages: Message[]): Message[] {
@@ -85,29 +88,92 @@ export class PersonalStore implements NoteRepository {
   async revision() { return this.backend.revision ? this.backend.revision() : (await this.backend.read()).version; }
   async snapshotRecord() {
     const { value, version } = await this.backend.read();
-    return { version, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name } };
+    return { version, context: conversationContext(value.contextHistory ?? value.history), snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name } };
   }
   async snapshot(): Promise<PersonalSnapshot> { return (await this.snapshotRecord()).snapshot; }
   async add(_session: string, content: string) { return this.change(value => { if (value.notes.length >= 100) return false; value.notes.push({ content }); return true; }); }
   async list(_session: string) { return (await this.snapshot()).notes; }
   async clear(_session: string) { return this.change(value => { const count = value.notes.length; value.notes = []; return count; }); }
   async remember(content: string) {
+    content = this.memoryContent(content);
     return this.change(value => {
-      if (value.memories.some(memory => memory.content === content)) return;
+      const slot = memorySlot(content);
+      const existing = slot ? value.memories.filter(memory => memorySlot(memory.content) === slot) : [];
+      if (existing.length === 1 && sameMemory(existing[0].content, content)) return value.generation;
+      if (!slot && value.memories.some(memory => sameMemory(memory.content, content))) return value.generation;
+      if (existing.length) {
+        value.memories = value.memories.filter(memory => memorySlot(memory.content) !== slot);
+        this.resetContext(value);
+      }
       if (value.memories.length >= 30) throw new PersonalError('Limite de 30 memórias. Apague uma antes de adicionar outra.', 409);
-      value.memories.push({ id: randomUUID(), content, createdAt: new Date().toISOString() });
+      value.memories.push({ id: existing.at(-1)?.id ?? randomUUID(), content, createdAt: existing.at(-1)?.createdAt ?? new Date().toISOString() });
+      return value.generation;
     });
   }
-  async forget(id: string) { return this.change(value => { value.memories = value.memories.filter(memory => memory.id !== id); }); }
-  async forgetAll() { return this.change(value => { value.memories = []; }); }
-  async append(messages: Message[], generation: number) {
-    return this.change(value => { if (generation !== value.generation) return; value.history = boundedHistory([...value.history, ...messages]); });
+  private memoryContent(content: string) {
+    const trimmed = content.trim();
+    if (!trimmed || trimmed.length > 500) throw new PersonalError('Use uma memória com 1 a 500 caracteres.', 400);
+    return trimmed;
   }
-  async clearHistory() { return this.change(value => { value.history = []; value.generation++; }); }
+  private resetContext(value: Document) { value.contextHistory = []; value.generation++; }
+  async saveProfile(name: string, address: string, previous: { name: string; address: string }) {
+    name = name.trim(); address = address.trim();
+    if ([name, address].some(value => value.length > 80 || /[\r\n]/.test(value))) throw new PersonalError('Use até 80 caracteres em cada campo do perfil, sem quebras de linha.', 400);
+    return this.change(value => {
+      const profile = personalProfile(value.memories);
+      if (profile.name !== previous.name || profile.address !== previous.address) throw new PersonalError('Seu perfil mudou em outro aparelho. Atualize os campos antes de salvar.', 409);
+      const contents = [name ? `meu nome é ${name}` : '', address ? `me chame de ${address}` : ''].filter(Boolean);
+      const current = value.memories.filter(memory => memorySlot(memory.content));
+      if (current.length === contents.length && contents.every(content => current.some(memory => sameMemory(memory.content, content)))) return value.generation;
+      const others = value.memories.filter(memory => !memorySlot(memory.content));
+      if (others.length + contents.length > 30) throw new PersonalError('Limite de 30 memórias. Apague uma antes de adicionar o perfil.', 409);
+      value.memories = [...others, ...contents.map(content => {
+        const existing = current.filter(memory => memorySlot(memory.content) === memorySlot(content)).at(-1);
+        return { id: existing?.id ?? randomUUID(), content, createdAt: existing?.createdAt ?? new Date().toISOString() };
+      })];
+      this.resetContext(value);
+      return value.generation;
+    });
+  }
+  async edit(id: string, content: string, previousContent: string) {
+    content = this.memoryContent(content);
+    return this.change(value => {
+      const memory = value.memories.find(memory => memory.id === id);
+      if (!memory) throw new PersonalError('Esta memória não existe mais. Atualize a lista.', 404);
+      if (memory.content !== previousContent) throw new PersonalError('Esta memória mudou em outro aparelho. Atualize a lista antes de editar.', 409);
+      if (memory.content === content) return value.generation;
+      const slot = memorySlot(content);
+      if (value.memories.some(other => other.id !== id && (sameMemory(other.content, content) || (slot && memorySlot(other.content) === slot)))) {
+        throw new PersonalError('Já existe uma memória com esse conteúdo ou campo do perfil. Edite a memória existente.', 409);
+      }
+      memory.content = content;
+      this.resetContext(value);
+      return value.generation;
+    });
+  }
+  async forget(id: string) { return this.change(value => {
+    if (!value.memories.some(memory => memory.id === id)) return value.generation;
+    value.memories = value.memories.filter(memory => memory.id !== id); this.resetContext(value);
+    return value.generation;
+  }); }
+  async forgetAll() { return this.change(value => { value.memories = []; this.resetContext(value); return value.generation; }); }
+  async append(messages: Message[], generation: number) {
+    return this.change(value => {
+      if (generation !== value.generation) return false;
+      // Keep the model's context separate so visible old conversations cannot undo forgetting.
+      value.contextHistory = [...(value.contextHistory ?? value.history), ...messages].slice(-MAX_CONTEXT_MESSAGES)
+        .map(({ id, role, content, createdAt }) => ({ id, role, content: content.slice(0, MAX_MESSAGE_LENGTH), createdAt }));
+      value.history = boundedHistory([...value.history, ...messages]);
+      return true;
+    });
+  }
+  async clearHistory() { return this.change(value => { value.history = []; this.resetContext(value); }); }
   async import(messages: Message[], notes: { content: string }[]) {
     return this.change(value => {
       const known = new Set(value.history.map(message => message.id));
       value.history = boundedHistory([...value.history, ...messages.filter(message => !known.has(message.id))].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)));
+      // Imported conversations are visible, but must not reintroduce corrected/forgotten facts.
+      if (value.contextHistory !== undefined) this.resetContext(value);
       value.notes = [...value.notes, ...notes.filter(note => !value.notes.some(existing => existing.content === note.content))].slice(-100);
     });
   }

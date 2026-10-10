@@ -232,13 +232,17 @@ kbd { font: inherit; }
 .personal-login h1 { font-size: clamp(23px, 5vw, 32px); }
 .personal-login form, .personal-memory form { display: grid; gap: 12px; }
 .personal-login label { display: flex; gap: 8px; align-items: center; text-align: left; }
-.personal-login input, .personal-memory textarea { width: 100%; min-height: 48px; padding: 14px; border: 1px solid #30445d; border-radius: 12px; background: #0b1626; color: #edf5ff; font: inherit; }
+.personal-login input, .personal-memory input, .personal-memory textarea { width: 100%; min-height: 48px; padding: 14px; border: 1px solid #30445d; border-radius: 12px; background: #0b1626; color: #edf5ff; font: inherit; }
 .personal-memory textarea { min-height: 100px; resize: vertical; }
 .personal-login p, .personal-memory p { line-height: 1.6; }
 .personal-memory { display: grid; gap: 18px; }
 .personal-memory ul { list-style: none; padding: 0; display: grid; gap: 12px; }
 .personal-memory li { display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid #25344b; border-radius: 12px; }
 .personal-memory li p { overflow-wrap: anywhere; }
+.personal-memory li > p { flex: 1; min-width: 0; }
+.personal-memory li > form { width: 100%; min-width: 0; }
+.memory-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 600px) { .personal-memory li { flex-wrap: wrap; } .personal-memory li > p { flex-basis: 100%; } }
 .personal-memory button, .personal-login button { min-height: 44px; }
 .personal-memory summary { min-height: 44px; padding: 12px; cursor: pointer; }
 .personal-error { color: #fca5a5; }

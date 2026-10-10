@@ -12,7 +12,6 @@ import { ResearchProvider } from './providers/research.js';
 import { SearchError, WebSearch } from './search.js';
 import type { AssistantProvider } from './providers/types.js';
 import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse, type Message } from '../shared/contracts.js';
-import { conversationContext } from '../shared/context.js';
 import { validSources, validSearchInfo } from '../shared/search.js';
 import { PersonalAuth, type PersonalConfig } from './personal/auth.js';
 import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type DocumentBackend } from './personal/store.js';
@@ -114,6 +113,17 @@ export async function buildApp(options: AppOptions = {}) {
     app.post<{ Body: { content: string } }>('/api/personal/memories', {
       schema: { body: { type: 'object', additionalProperties: false, required: ['content'], properties: { content: { type: 'string', minLength: 1, maxLength: 500 } } } },
     }, async (request, reply) => { if (!request.body.content.trim()) return reply.code(400).send({ error: 'Digite uma memória.' }); await personal.remember(request.body.content.trim()); return { ok: true }; });
+    app.patch<{ Params: { id: string }; Body: { content: string; previousContent: string } }>('/api/personal/memories/:id', {
+      schema: { body: { type: 'object', additionalProperties: false, required: ['content', 'previousContent'], properties: {
+        content: { type: 'string', minLength: 1, maxLength: 500 }, previousContent: { type: 'string', minLength: 1, maxLength: 500 },
+      } } },
+    }, async request => { await personal.edit(request.params.id, request.body.content, request.body.previousContent); return { ok: true }; });
+    app.put<{ Body: { name: string; address: string; previousName: string; previousAddress: string } }>('/api/personal/profile', {
+      schema: { body: { type: 'object', additionalProperties: false, required: ['name', 'address', 'previousName', 'previousAddress'], properties: {
+        name: { type: 'string', maxLength: 80 }, address: { type: 'string', maxLength: 80 },
+        previousName: { type: 'string', maxLength: 80 }, previousAddress: { type: 'string', maxLength: 80 },
+      } } },
+    }, async request => { const { name, address, previousName, previousAddress } = request.body; await personal.saveProfile(name, address, { name: previousName, address: previousAddress }); return { ok: true }; });
     app.delete<{ Params: { id: string } }>('/api/personal/memories/:id', async request => { await personal.forget(request.params.id); return { ok: true }; });
     app.delete('/api/personal/memories', async () => { await personal.forgetAll(); return { ok: true }; });
     app.post<{ Body: { messages: Message[]; legacySessionId?: string } }>('/api/personal/import', {
@@ -159,16 +169,18 @@ export async function buildApp(options: AppOptions = {}) {
     const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on('close', disconnected);
     try {
-      const snapshot = personal ? await personal.snapshot() : undefined;
-      const body = snapshot ? { ...request.body, sessionId: 'owner', context: conversationContext(snapshot.history), personalMemory: snapshot.memories.map(memory => memory.content) } : request.body;
-      const command = personal && !request.body.webSearch ? await memoryCommand(body, personal) : undefined;
-      const response: ChatResponse = { ...(command ?? await assistant.respond(body, controller.signal)), id: randomUUID(), createdAt: new Date().toISOString() };
+      const command = personal && !request.body.webSearch ? await memoryCommand(request.body, personal) : undefined;
+      const record = personal ? await personal.snapshotRecord() : undefined;
+      const snapshot = record?.snapshot;
+      const body = record ? { ...request.body, sessionId: 'owner', context: record.context, personalMemory: record.snapshot.memories.map(memory => memory.content) } : request.body;
+      const response: ChatResponse = { ...(command?.response ?? await assistant.respond(body, controller.signal)), id: randomUUID(), createdAt: new Date().toISOString() };
       if (personal && snapshot) {
         if (response.message.length > 6000) response.message = response.message.slice(0, 5800) + (response.command === 'note-list'
           ? '\n\nLista limitada. Consulte as notas completas em Preferências → Memória pessoal.' : '\n\nTexto limitado a 6000 caracteres.');
-        await personal.append([{ id: randomUUID(), role: 'user', content: request.body.message, createdAt: response.createdAt },
+        const appended = await personal.append([{ id: randomUUID(), role: 'user', content: request.body.message, createdAt: response.createdAt },
           { id: response.id, role: 'assistant', content: response.message, createdAt: response.createdAt, provider: response.provider,
-            ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], snapshot.generation);
+            ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], command?.generation ?? snapshot.generation);
+        if (!appended) throw new PersonalError('Sua memória ou conversa mudou enquanto eu respondia. Envie a pergunta novamente para usar o contexto atualizado.', 409);
       }
       reply.header('Cache-Control', 'no-store');
       return response;
