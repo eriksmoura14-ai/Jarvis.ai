@@ -4,7 +4,7 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
-**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O aplicativo não navega na internet nem controla o sistema operacional; o modelo não executa ferramentas.
+**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; o modelo não executa ações.
 
 ## Começar
 
@@ -50,7 +50,7 @@ No desenvolvimento, mantenha a API na porta 3001 para o proxy do Vite. Em uma re
 
 ## Hospedar no GitHub Pages
 
-O workflow `.github/workflows/pages.yml` testa e publica a build estática em pushes para `main` ou execução manual. Ele usa apenas o token padrão do GitHub Actions: não requer cadastrar credenciais nem contratar servidor.
+O workflow `.github/workflows/pages.yml` testa e publica a build estática somente por execução manual, para que alterações de uso pessoal no Render não iniciem publicações automáticas no Pages. Ele usa apenas o token padrão do GitHub Actions: não requer cadastrar credenciais nem contratar servidor.
 
 1. No repositório, abra **Settings → Pages**.
 2. Em **Build and deployment → Source**, selecione **GitHub Actions**.
@@ -86,6 +86,7 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.
 - Integração opcional com Groq e Ollama no backend, contexto de até 10 mensagens/8.000 caracteres e identificação de respostas da IA. Os comandos conhecidos têm prioridade e não consomem o modelo. A conexão externa no Pages é configurada por endereço HTTPS, sem chave no frontend.
+- Pesquisa explícita por voz/texto ou opção **Pesquisar na web**, com até cinco fontes clicáveis, trechos reais, resumo opcional pela IA e fontes preservadas no histórico. Veja [uso pessoal e limites da pesquisa](docs/search.md).
 - API com validação de corpo/contexto, limite de requisições, orçamento diário de IA persistido em SQLite, cancelamento, respostas de erro, CORS por origem explícita, cabeçalhos de segurança e consultas parametrizadas.
 
 ### Experimente
@@ -135,21 +136,24 @@ server/
     local.ts              Motor local de comandos
     model.ts              Chamadas Groq/Ollama e configuração segura
     hybrid.ts             Prioridade local e limites de IA
+    research.ts           Pesquisa explícita e resumo com fontes
+  search.ts               DuckDuckGo HTML / Bing RSS, limites e extração
 shared/contracts.ts       Tipos de mensagem e contratos HTTP
 shared/context.ts         Seleção limitada do contexto recente
+shared/search.ts          Comandos de pesquisa e validação de fontes
 e2e/                      Testes Playwright
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
 Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando o comando usa notas → resposta em texto. `GET /api/health` verifica a API. No modo Pages: React → adaptador `src/lib/browser.ts` → o mesmo provedor em `shared/local.ts` → `localStorage`, sem requisições à API. A calculadora comum fica em `shared/calculator.ts`. O horário usa o fuso IANA informado pelo navegador, validado no backend quando há API.
 
-`buildApp({ ai })` compõe o motor local com `ModelProvider`; `buildApp({ provider })` permite injetar outro provedor. Pedidos reconhecidos são locais. Pedidos desconhecidos usam o modelo somente quando configurado. Não há SDK de IA no frontend: as chamadas HTTP e a chave Groq ficam no backend. No Pages, comandos conhecidos continuam no navegador e apenas perguntas livres seguem para o backend configurado.
+`buildApp({ ai })` compõe o motor local com `ModelProvider`; `buildApp({ provider })` permite injetar outro provedor. Pedidos reconhecidos são locais. Pedidos desconhecidos usam o modelo somente quando configurado. Não há SDK de IA no frontend: as chamadas HTTP e a chave Groq ficam no backend. No Pages, comandos conhecidos continuam no navegador; perguntas livres e pesquisas explícitas seguem para o backend configurado. `ResearchProvider` detecta pesquisas antes dos comandos locais, consulta um destino fixo de busca e envia apenas os trechos ao modelo para resumo. As URLs das fontes não são destinos de fetch no servidor. Sem modelo, retorna a lista de resultados.
 
 ### Dados e privacidade
 
 Os parágrafos abaixo descrevem o **modo servidor**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
 
-O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem. Quando a IA está ativada, o provedor recebe a pergunta e até 10 mensagens recentes (máximo de 8.000 caracteres de contexto); consulte sua política de retenção. A tabela `ai_usage` mantém apenas contagens diárias, não o texto da conversa.
+O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem. Quando a IA está ativada, o provedor recebe a pergunta e até 10 mensagens recentes (máximo de 8.000 caracteres de contexto); consulte sua política de retenção. Pesquisas enviam o assunto ao buscador; os trechos também acompanham o resumo por IA. A tabela `ai_usage` mantém apenas contagens diárias, não o texto da conversa.
 
 As **notas** ficam em `data/jarvis.sqlite`, incluindo os arquivos de WAL do SQLite, e pertencem ao UUID guardado em `jarvis.session.v1`. Copiar esse UUID possibilita acessar as notas da sessão: ele não substitui autenticação. Limpar os dados do site ou usar outro navegador cria outra sessão, sem recuperar as notas anteriores. Para removê-las antes de limpar o site, use `apagar notas`.
 

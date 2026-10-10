@@ -2,7 +2,7 @@
 
 O JARVIS mantém o motor de comandos e acrescenta conversa livre por um modelo no backend. O modelo recebe a pergunta atual e até 10 mensagens recentes, limitadas a 8.000 caracteres no total e 2.000 por mensagem. Limpar a conversa limpa esse contexto. O contexto é enviado pelo navegador a cada pedido; o backend não guarda as mensagens nem compartilha conversas entre sessões/dispositivos.
 
-Comandos como `hora`, `calcular ...`, `anotar ...` e `notas` têm prioridade e continuam locais. A IA não pesquisa na web nem executa ferramentas: pedir “guarde isso” ao modelo não salva uma nota. Use `anotar <texto>`. No GitHub Pages, comandos e notas continuam no navegador mesmo com backend conectado.
+Comandos como `hora`, `calcular ...`, `anotar ...` e `notas` têm prioridade e continuam locais, exceto quando você ativa explicitamente o modo de pesquisa. Use `pesquise <assunto>` para consultar a web com fontes; veja [como a pesquisa funciona](search.md). O backend fornece trechos reais de busca à IA, sem executar ações solicitadas por ela: pedir “guarde isso” ao modelo não salva uma nota. Use `anotar <texto>`. No GitHub Pages, comandos e notas continuam no navegador mesmo com backend conectado.
 
 ## 1. Escolher e configurar o modelo no backend
 
@@ -10,7 +10,7 @@ Node.js 24 e SQLite continuam sendo suficientes para o backend. Copie `.env.exam
 
 ### Groq: API de modelo
 
-Crie uma chave no [painel oficial](https://console.groq.com/keys) usando uma conta com cota gratuita, sem ativar cobrança. Confira no painel a elegibilidade da conta, exigência de cartão, cotas e os identificadores dos modelos disponíveis; esta integração não garante que essas condições permanecerão iguais.
+Crie uma chave no [painel oficial](https://console.groq.com/keys) usando uma conta com cota gratuita, sem ativar cobrança. Confira no painel a elegibilidade da conta, exigência de cartão, cotas e os identificadores dos modelos disponíveis; esta integração não garante que essas condições permanecerão iguais. O modelo `openai/gpt-oss-20b` consta na lista de limites gratuitos consultada durante a integração; confirme sua disponibilidade na conta. Modelos Llama anteriormente sugeridos podem exigir plano Enterprise.
 
 Configure no **backend**:
 

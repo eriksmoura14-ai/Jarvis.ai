@@ -18,7 +18,7 @@ const chat = (app: FastifyInstance, message: string, sessionId?: string) => app.
 describe('API e comandos locais', () => {
   it('responde ao health check e ao chat com o provedor real', async () => {
     const app = await setup();
-    expect((await app.inject('/api/health')).json()).toEqual({ status: 'ok', provider: 'local', version: '0.1.0' });
+    expect((await app.inject('/api/health')).json()).toEqual({ status: 'ok', provider: 'local', version: '0.1.0', webSearch: { enabled: true } });
     const response = await chat(app, 'calcular (12 + 8) / 2');
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ message: 'O resultado é 10.', command: 'calculate', provider: 'local' });

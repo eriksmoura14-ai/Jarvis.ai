@@ -8,12 +8,15 @@ import { NoteStore } from './database.js';
 import { LocalProvider } from './providers/local.js';
 import { HybridProvider } from './providers/hybrid.js';
 import { ModelError, ModelProvider, type AIConfig } from './providers/model.js';
+import { ResearchProvider } from './providers/research.js';
+import { SearchError, WebSearch } from './search.js';
 import type { AssistantProvider } from './providers/types.js';
 import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse } from '../shared/contracts.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
   ai?: AIConfig; modelFetch?: typeof fetch; aiDailyLimit?: number; allowedOrigins?: string[];
+  searchFetch?: typeof fetch;
 }
 export async function buildApp(options: AppOptions = {}) {
   const allowedOrigins = new Set((options.allowedOrigins ?? []).map(value => {
@@ -27,6 +30,7 @@ export async function buildApp(options: AppOptions = {}) {
   const store = new NoteStore(options.databasePath ?? process.env.DATABASE_PATH ?? './data/jarvis.sqlite');
   const local = new LocalProvider(store);
   const provider = options.provider ?? (options.ai ? new HybridProvider(local, new ModelProvider(options.ai, options.modelFetch), day => store.claimAIRequest(day, dailyLimit)) : local);
+  const assistant = new ResearchProvider(provider, new WebSearch(options.searchFetch));
   app.addHook('onClose', async () => store.close());
   await app.register(rateLimit, { global: false });
   app.addHook('onRequest', async (request, reply) => {
@@ -52,7 +56,7 @@ export async function buildApp(options: AppOptions = {}) {
   });
   app.get('/api/health', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
-    return { status: 'ok', provider: provider.name, version: '0.1.0',
+    return { status: 'ok', provider: provider.name, version: '0.1.0', webSearch: { enabled: true },
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
   });
   app.post<{ Body: ChatRequest }>('/api/chat', {
@@ -62,6 +66,7 @@ export async function buildApp(options: AppOptions = {}) {
         type: 'object', additionalProperties: false, required: ['message', 'sessionId', 'timeZone'],
         properties: {
           message: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
+          webSearch: { type: 'boolean' },
           sessionId: { type: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' },
           timeZone: { type: 'string', minLength: 1, maxLength: 100 },
           context: { type: 'array', maxItems: MAX_CONTEXT_MESSAGES, items: {
@@ -82,13 +87,13 @@ export async function buildApp(options: AppOptions = {}) {
     const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on('close', disconnected);
     try {
-      const response: ChatResponse = { ...await provider.respond(request.body, controller.signal), id: randomUUID(), createdAt: new Date().toISOString() };
+      const response: ChatResponse = { ...await assistant.respond(request.body, controller.signal), id: randomUUID(), createdAt: new Date().toISOString() };
       reply.header('Cache-Control', 'no-store');
       return response;
     } finally { reply.raw.removeListener('close', disconnected); }
   });
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ModelError) return reply.code(error.statusCode).send({ error: error.message });
+    if (error instanceof ModelError || error instanceof SearchError) return reply.code(error.statusCode).send({ error: error.message });
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;
     if (status >= 500) request.log.error(error);
     reply.code(status).send({ error: status === 429 ? 'Muitas mensagens. Aguarde um minuto e tente novamente.' : status < 500 ? 'Pedido inválido. Confira a mensagem e tente novamente.' : 'O assistente encontrou um erro. Tente novamente.' });

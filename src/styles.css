@@ -116,6 +116,20 @@ a { color: inherit; text-decoration: none; }
 .message-badge { background: #122c43; color: #72aed8; border: 1px solid #254462; border-radius: 3px; padding: 2px 4px; font-size: 6px; letter-spacing: .7px; }
 .message-body p { font-size: 12px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; color: #aebed4; }
 .message-user .message-body p { color: #d4e2f2; }
+.search-toggle { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px; min-height: 44px; margin-top: 5px; color: #a6c6e0; font-size: 12px; cursor: pointer; }
+.search-toggle input { width: 17px; height: 17px; accent-color: #69bafa; }
+.search-toggle small { color: #829bb2; font-size: 10px; }
+.search-sources { margin-top: 13px; text-align: left; }
+.search-sources .search-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; font-size: 10px; color: #91bbdc; margin: 0 0 7px; }
+.search-sources ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.search-sources a { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 10px; border: 1px solid #2d4a63; background: #112236; border-radius: 7px; color: #bddfff; text-decoration: none; overflow-wrap: anywhere; }
+.search-sources a:hover { border-color: #68b6ee; background: #16304a; }
+.search-sources a > span:nth-child(2) { min-width: 0; flex: 1; }
+.search-sources strong { display: block; font-weight: 500; font-size: 12px; line-height: 1.5; }
+.search-sources small { display: block; font-size: 10px; color: #8aabc8; line-height: 1.6; }
+.search-sources svg, .search-reference { flex-shrink: 0; }
+.search-reference { color: #68b6ee; font-size: 11px; }
+.search-disclaimer { margin-top: 7px; }
 .read-button { display: inline-flex; align-items: center; justify-content: flex-start; gap: 5px; color: #7794b6; font-size: 9px; background: transparent; border: 0; padding: 6px 7px; margin: 3px 0 -9px -7px; min-height: 36px; border-radius: 5px; }
 .read-button:hover { background: #1c2c43; }
 .thinking { display: flex; align-items: center; gap: 12px; font-size: 10px; color: #82a3c5; padding-bottom: 20px; }

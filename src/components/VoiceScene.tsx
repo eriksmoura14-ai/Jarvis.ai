@@ -1,7 +1,9 @@
 import { useState, type FormEvent, type RefObject } from 'react';
 import { CircleHelp, History, Keyboard, MessageSquare, Mic, Send, Settings2, ShieldCheck, Square, Volume2, VolumeX } from 'lucide-react';
 import { Core } from './Core';
-import { MAX_MESSAGE_LENGTH } from '../../shared/contracts';
+import { MAX_MESSAGE_LENGTH, type SearchSource, type WebSearchInfo } from '../../shared/contracts';
+import { SearchSources } from './SearchSources';
+import { SearchToggle } from './SearchToggle';
 
 interface VoiceSceneProps {
   state: 'idle' | 'thinking' | 'listening' | 'speaking';
@@ -15,6 +17,11 @@ interface VoiceSceneProps {
   status: string;
   connection: string;
   modelStatus: string;
+  searchEnabled: boolean;
+  webSearch: boolean;
+  sources?: SearchSource[];
+  searchInfo?: WebSearchInfo;
+  onWebSearch: (value: boolean) => void;
   error: string;
   notice: string;
   transcript: string;
@@ -64,6 +71,7 @@ export function VoiceScene(props: VoiceSceneProps) {
       <div className="scene-response" aria-live="polite" aria-atomic="true">
         {props.transcript && <p className="scene-transcript"><span>VOCÊ</span>{props.transcript}</p>}
         {props.reply && <p className="scene-reply"><span>JARVIS</span>{props.reply}</p>}
+        <SearchSources sources={props.sources} info={props.searchInfo} />
         {!props.transcript && !props.reply && <p className="scene-example">Experimente: <span>“Jarvis, que horas são?”</span></p>}
       </div>
       {props.error && <p className="scene-error" role="alert">{props.error}</p>}
@@ -82,6 +90,7 @@ export function VoiceScene(props: VoiceSceneProps) {
         <label htmlFor="message-input">Sua mensagem</label>
         <div className="scene-typing-row"><textarea data-gamepad id="message-input" ref={props.textareaRef} aria-label="Sua mensagem para JARVIS" placeholder="Digite um comando…" maxLength={MAX_MESSAGE_LENGTH} rows={2} value={props.draft} onChange={event => props.onDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); props.onSend(); } }} /><button data-gamepad type="submit" className="send-button" aria-label="Enviar mensagem" disabled={!props.draft.trim() || props.pending || props.phase !== 'idle'}><Send size={18} /></button></div>
       </form>}
+      <SearchToggle enabled={props.searchEnabled} checked={props.webSearch} disabled={active} onChange={props.onWebSearch} />
       {props.storageError && <p className="scene-error" role="alert">O histórico pode não ser salvo: o armazenamento está bloqueado ou sem espaço.</p>}
     </section>
 

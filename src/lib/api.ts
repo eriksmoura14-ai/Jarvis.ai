@@ -1,5 +1,6 @@
 import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/contracts';
 import { loadBackend, normalizeBackend } from './backend';
+import { searchQuery, validSearchInfo, validSources } from '../../shared/search';
 
 export const BROWSER_MODE = import.meta.env.MODE === 'pages';
 
@@ -8,13 +9,17 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Prom
   if (BROWSER_MODE) {
     const { browserCommand } = await import('./browser');
     if (signal?.aborted) throw new DOMException('Request canceled', 'AbortError');
-    const local = await browserCommand(body);
-    if (local.command !== 'unknown' || !loadBackend()) return local;
+    if (searchQuery(body) !== undefined) {
+      if (!loadBackend()) throw new Error('A pesquisa na web precisa de um backend conectado em Preferências.');
+    } else {
+      const local = await browserCommand(body);
+      if (local.command !== 'unknown' || !loadBackend()) return local;
+    }
   }
   const controller = new AbortController();
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
-  const timer = setTimeout(() => controller.abort(), 20_000);
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const response = await fetch(`${BROWSER_MODE ? loadBackend() : ''}/api/chat`, {
       method: 'POST', credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal,
@@ -25,6 +30,7 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Prom
     }
     const data = await response.json() as ChatResponse;
     if (typeof data.message !== 'string' || !data.message.trim() || typeof data.id !== 'string' || !['local', 'groq', 'ollama'].includes(data.provider) || !Number.isFinite(Date.parse(data.createdAt))) throw new Error('O backend retornou uma resposta inválida.');
+    if ((data.sources !== undefined && !validSources(data.sources)) || (data.webSearch !== undefined && !validSearchInfo(data.webSearch))) throw new Error('O backend retornou fontes de pesquisa inválidas.');
     return data;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('O assistente demorou para responder. Tente novamente.');

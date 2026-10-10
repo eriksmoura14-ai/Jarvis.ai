@@ -1,4 +1,5 @@
 import type { Message } from '../../shared/contracts';
+import { validSources, validSearchInfo } from '../../shared/search';
 
 export const HISTORY_KEY = 'jarvis.history.v1';
 const SESSION_KEY = 'jarvis.session.v1';
@@ -32,7 +33,11 @@ export function decodeHistory(value: string | null): Message[] {
         && typeof m.content === 'string' && m.content.length <= 210_000
         && (m.provider === undefined || ['local', 'groq', 'ollama'].includes(m.provider))
         && typeof m.createdAt === 'string' && Number.isFinite(Date.parse(m.createdAt));
-    }).slice(-MAX_HISTORY);
+    }).slice(-MAX_HISTORY).map(message => ({ id: message.id, role: message.role, content: message.content,
+      createdAt: message.createdAt, provider: message.provider,
+      ...(validSources(message.sources) ? { sources: message.sources } : {}),
+      ...(validSearchInfo(message.webSearch) ? { webSearch: message.webSearch } : {}),
+    }));
   } catch { return []; }
 }
 export function loadHistory(): Message[] {
