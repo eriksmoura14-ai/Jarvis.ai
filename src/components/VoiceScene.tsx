@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type RefObject } from 'react';
+import { useState, type FormEvent, type RefObject, type ReactNode } from 'react';
 import { CircleHelp, History, Keyboard, MessageSquare, Mic, Send, Settings2, ShieldCheck, Square, Volume2, VolumeX } from 'lucide-react';
 import { Core } from './Core';
 import { MAX_MESSAGE_LENGTH, type SearchSource, type WebSearchInfo } from '../../shared/contracts';
@@ -26,6 +26,7 @@ interface VoiceSceneProps {
   notice: string;
   transcript: string;
   reply: string;
+  reception?: ReactNode;
   draft: string;
   storageError: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -68,7 +69,8 @@ export function VoiceScene(props: VoiceSceneProps) {
         : props.speechBusy ? 'Você pode interromper a resposta quando quiser.'
         : props.notice || (props.canListen ? 'Toque no microfone. Fale comigo.' : 'A voz não está disponível aqui. Podemos conversar por texto.')}</p>
 
-      <div className="scene-response" aria-live="polite" aria-atomic="true">
+      {props.reception}
+      <div className="scene-response" aria-live={props.pending ? 'off' : 'polite'} aria-atomic="true">
         {props.transcript && <p className="scene-transcript"><span>VOCÊ</span>{props.transcript}</p>}
         {props.reply && <p className="scene-reply"><span>JARVIS</span>{props.reply}</p>}
         <SearchSources sources={props.sources} info={props.searchInfo} />

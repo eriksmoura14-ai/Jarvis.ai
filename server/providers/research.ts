@@ -8,10 +8,10 @@ export class ResearchProvider implements AssistantProvider {
   private active = 0;
   private attempts: number[] = [];
   constructor(private assistant: AssistantProvider, private search: WebSearch) { this.name = assistant.name; }
-  async respond(request: ChatRequest, signal?: AbortSignal): Promise<Omit<ChatResponse, 'id' | 'createdAt'>> {
+  async respond(request: ChatRequest, signal?: AbortSignal, onText?: (text: string) => void): Promise<Omit<ChatResponse, 'id' | 'createdAt'>> {
     const query = searchQuery(request);
     if (query === undefined) {
-      const reply = await this.assistant.respond(request, signal);
+      const reply = await this.assistant.respond(request, signal, onText);
       if (reply.command === 'help') reply.message += '\n\n• pesquise <assunto> — consultar a web e mostrar as fontes. A pesquisa envia o assunto ao buscador.';
       return reply;
     }
@@ -27,11 +27,12 @@ export class ResearchProvider implements AssistantProvider {
       let provider: ChatResponse['provider'] = 'local';
       if (this.assistant instanceof HybridProvider) {
         try {
-          const summary = await this.assistant.research({ ...request, message: `Pesquise: ${query}` }, results, signal);
+          const summary = await this.assistant.research({ ...request, message: `Pesquise: ${query}` }, results, signal, onText);
           message = summary.message; provider = summary.provider;
         } catch {
           signal?.throwIfAborted();
           message = 'Encontrei fontes na web, mas o resumo por IA está indisponível. Veja os resultados:\n\n' + message;
+          onText?.(message.slice(0, 6000));
         }
       }
       return { message, provider, command: 'search', sources: results.sources, webSearch: results.info };

@@ -6,6 +6,8 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Voz mais natural:** [ativar ElevenLabs no plano Free](docs/voice.md), com chave somente no backend e botão **Testar ElevenLabs**, que usa só a voz natural e mostra erros. O modo Automática permite a voz do aparelho como alternativa. Precisa de conta, chave e voz configuradas; a voz padrão continua sem credenciais.
 
+**Ritmo da conversa e recepção:** [resposta progressiva, voz em partes, tempos reais, “Jarvis, pare” e notícias opcionais ao abrir](docs/conversation.md). Não exige novas chaves, variáveis ou tabelas; usa as integrações já configuradas. Notícias e interrupção por voz são ativadas em Preferências, por aparelho.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
 **Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; o modelo não executa ações.
@@ -85,9 +87,13 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Modo opcional para um único dono: login por senha, sessões revogáveis, memória salva por pedido explícito, exclusão individual, histórico/notas sincronizados e importação consentida de mensagens antigas. SQLite local ou Supabase para persistir no Render; [configuração](docs/personal.md).
 - Sem login configurado, histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
 - Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
-- Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, sem escutar a própria voz. Cada escuta tem limite de 60 segundos.
+- Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, com a escuta comum desligada durante a reprodução. A interrupção experimental “Jarvis, pare”, quando ativada, escuta somente esse comando durante a fala. Cada escuta tem limite de 60 segundos.
 - Modo chat: captura com `getUserMedia` e `MediaRecorder`, mediante ação e permissão, reprodução local e descarte. A transcrição entra no campo para revisão, **sem envio automático** neste modo.
 - Síntese de voz do navegador, seleção de voz em Preferências, repetição da resposta e interrupção. No modo voz, respostas faladas começam ativadas; no chat, a leitura automática é opcional, desligada por padrão e sua preferência é persistida.
+- Resposta progressiva do Groq/Ollama com texto provisório fora do histórico; cancelamento e mudanças de memória descartam o rascunho. Tempos de rede, resposta, armazenamento e voz em Preferências.
+- Leitura em até duas partes, preparando a segunda enquanto a primeira toca; cache de até dois áudios somente na memória da página.
+- Recepção com o perfil da conta; resumo de notícias por botão ou consulta opcional uma vez ao dia neste aparelho, com fontes e leitura configurável.
+- Interrupção experimental dizendo “Jarvis, pare” durante uma conversa iniciada pelo microfone; desligada por padrão, sem abrir o microfone ao carregar a página.
 - Interrupção pelo botão central ou Escape; troca de aba/aplicativo pausa a conversa e exige novo toque para retomar. Respostas atrasadas de pedidos interrompidos não iniciam leitura. Digitação permanece disponível.
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.

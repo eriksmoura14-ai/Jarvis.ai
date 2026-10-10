@@ -64,5 +64,5 @@ test('comando falado pesquisa e sintetiza só a resposta; fontes ficam acessíve
   expect(calls).toHaveLength(1);
   expect(calls[0].message).toBe('Jarvis, pesquise React');
   const spoken = await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken);
-  expect(spoken).toEqual([response.message]);
+  expect(spoken).toEqual(['React usa componentes reutilizáveis.']);
 });

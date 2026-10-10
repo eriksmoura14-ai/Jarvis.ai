@@ -55,12 +55,12 @@ test('fallback sem voz, teclado, diálogo e preferências persistidas', async ({
   await expect(page.getByText(/Posso ajudar com estes comandos/)).toBeVisible();
   await page.getByRole('button', { name: 'Preferências' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('dialog').getByRole('checkbox').check();
+  await page.getByRole('dialog').getByRole('checkbox', { name: /Ler respostas automaticamente/ }).check();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: 'Preferências' }).click();
-  await expect(page.getByRole('dialog').getByRole('checkbox')).toBeChecked();
+  await expect(page.getByRole('dialog').getByRole('checkbox', { name: /Ler respostas automaticamente/ })).toBeChecked();
 });
 test('recusa do microfone não impede a digitação', async ({ page }) => {
   await page.addInitScript(() => {

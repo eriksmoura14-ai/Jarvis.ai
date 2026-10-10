@@ -66,8 +66,8 @@ de trocar esse ID para descartar o áudio anterior.
   longas recebem um aviso falado de que o texto completo está na tela.
 - O **texto a ser lido** é enviado ao ElevenLabs; o microfone não é enviado para
   essa integração. Consulte a política de retenção da sua conta. O JARVIS não
-  salva MP3 no Supabase, em disco ou no localStorage. Conserva somente o último
-  áudio na memória da página para repetir sem nova geração. Sair da conta ou
+  salva MP3 no Supabase, em disco ou no localStorage. Conserva até dois
+  áudios na memória da página para repetir sem nova geração. Sair da conta ou
   recarregar a página descarta esse áudio. Repetir outra resposta pode gerar
   áudio e consumir cota novamente.
 - No modo Automática, falha do provedor ou cota esgotada tenta a síntese nativa e informa a mudança.
@@ -86,6 +86,35 @@ de trocar esse ID para descartar o áudio anterior.
   microfone físico, fones, reprodução automática e retomada precisam de teste
   no aparelho. A build Pages continua usando voz nativa, pois não acessa a
   sessão privada do Render.
+
+## Ritmo e interrupção
+
+**Preferências → Voz em partes** vem ativada: divide uma leitura maior em até
+duas partes, respeitando o teto total de 1.200 caracteres. A primeira começa
+quando seu MP3 está pronto; a segunda é preparada durante essa reprodução e
+só toca depois. Cada parte verifica o plano Free/cota e conta como uma chamada
+no limite de 10 por minuto. Uma falha na segunda parte não refaz o pedido:
+no modo Automática tenta a voz do aparelho; no modo ElevenLabs fica no texto.
+Interromper cancela também a preparação antecipada. Desative essa preferência
+para gerar um único MP3. Os dois áudios mais recentes ficam apenas em RAM,
+incluindo o áudio cuja reprodução o celular bloqueou.
+
+**Interromper dizendo “Jarvis, pare”** é opcional e experimental. Só abre o
+reconhecimento durante a reprodução de uma conversa iniciada por você no
+microfone. Reconhece `Jarvis, pare`, `Jarvis, parar`, `Jarvis, pausa`, `Jarvis,
+pause` e `Jarvis, silêncio`. Não envia essas transcrições ao chat nem aceita
+outra pergunta enquanto a voz está falando. Ignora fala comum e comandos que
+apareçam literalmente no texto lido, para reduzir auto-interrupção por eco.
+Isso não é cancelamento acústico de eco: use fones e teste no seu aparelho.
+Falhas do reconhecimento preservam a reprodução e o botão central. Depois de
+até duas tentativas de retomar uma escuta encerrada, o botão continua disponível.
+Desligar a opção, parar a reprodução, sair/trocar de aplicativo ou de conta
+encerra essa escuta. Não há palavra de ativação permanente, detecção de palmas,
+conversa com tela bloqueada ou escuta automática ao abrir o site.
+
+Veja [tempos da conversa e recepção pessoal](conversation.md). A leitura aguarda
+a confirmação final da resposta/contexto pelo servidor; o texto progressivo é
+um rascunho e não é falado nem gravado como resposta definitiva.
 
 ## Verificação local
 

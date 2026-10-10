@@ -11,6 +11,8 @@ export interface ChatRequest {
   timeZone: string;
   context?: ConversationTurn[];
   webSearch?: boolean;
+  stream?: boolean;
+  voice?: boolean;
 }
 export interface ChatResponse {
   id: string;
@@ -20,11 +22,14 @@ export interface ChatResponse {
   createdAt: string;
   sources?: SearchSource[];
   webSearch?: WebSearchInfo;
+  timings?: ChatTimings;
 }
-export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
+export interface ChatTimings { preparationMs: number; answerMs: number; saveMs: number; totalMs: number; firstTextMs?: number }
+export type ChatStreamEvent = { type: 'ready' } | { type: 'text'; text: string } | { type: 'result'; response: ChatResponse } | { type: 'error'; error: string };
+export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; streaming?: true; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
 export interface AssistantProvider {
   readonly name: ProviderName;
-  respond(request: ChatRequest, signal?: AbortSignal): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
+  respond(request: ChatRequest, signal?: AbortSignal, onText?: (text: string) => void): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
 }
 export interface NoteRepository {
   add(sessionId: string, content: string): boolean | Promise<boolean>;

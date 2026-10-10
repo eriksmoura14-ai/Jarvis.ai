@@ -2,10 +2,12 @@ import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/con
 import { loadBackend, normalizeBackend } from './backend';
 import { searchQuery, validSearchInfo, validSources } from '../../shared/search';
 import { lockPersonal } from './personal';
+import { streamLines } from '../../shared/stream';
 
 export const BROWSER_MODE = import.meta.env.MODE === 'pages';
 
-export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
+export interface ChatProgress { onText?: (text: string) => void; onReady?: () => void }
+export async function sendMessage(body: ChatRequest, signal?: AbortSignal, progress: ChatProgress = {}): Promise<ChatResponse> {
   if (signal?.aborted) throw new DOMException('Request canceled', 'AbortError');
   if (BROWSER_MODE) {
     const { browserCommand } = await import('./browser');
@@ -30,7 +32,22 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Prom
       const error = await response.json().catch(() => null) as { error?: string } | null;
       throw new Error(error?.error ?? 'Não foi possível enviar a mensagem.');
     }
-    const data = await response.json() as ChatResponse;
+    let data: ChatResponse;
+    if (response.headers.get('content-type')?.startsWith('application/x-ndjson')) {
+      if (!response.body) throw new Error('A resposta do assistente foi interrompida.');
+      let result: ChatResponse | undefined;
+      for await (const line of streamLines(response.body, controller.signal)) {
+        if (!line) continue;
+        const event = JSON.parse(line) as { type?: string; text?: unknown; response?: ChatResponse; error?: unknown };
+        if (event.type === 'ready') progress.onReady?.();
+        else if (event.type === 'text' && typeof event.text === 'string' && event.text.length <= 6000) progress.onText?.(event.text);
+        else if (event.type === 'error' && typeof event.error === 'string') throw new Error(event.error);
+        else if (event.type === 'result' && event.response) { result = event.response; break; }
+        else throw new Error('O backend retornou uma resposta progressiva inválida.');
+      }
+      if (!result) throw new Error('A resposta do assistente foi interrompida. Tente novamente.');
+      data = result;
+    } else data = await response.json() as ChatResponse;
     if (typeof data.message !== 'string' || !data.message.trim() || typeof data.id !== 'string' || !['local', 'groq', 'ollama'].includes(data.provider) || !Number.isFinite(Date.parse(data.createdAt))) throw new Error('O backend retornou uma resposta inválida.');
     if ((data.sources !== undefined && !validSources(data.sources)) || (data.webSearch !== undefined && !validSearchInfo(data.webSearch))) throw new Error('O backend retornou fontes de pesquisa inválidas.');
     return data;

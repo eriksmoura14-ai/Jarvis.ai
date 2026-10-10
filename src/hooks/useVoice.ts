@@ -27,6 +27,9 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
   const [error, setError] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
   const [interim, setInterim] = useState('');
+  const [durationMs, setDurationMs] = useState<number>();
+  const started = useRef(0);
+  const lastDuration = useRef<number | undefined>(undefined);
   const phaseRef = useRef(phase);
   const stream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -75,6 +78,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
     const captureAudio = settings.current.captureAudio !== false;
     if (phaseRef.current !== 'idle' || !(captureAudio ? canRecord : canRecognize)) return;
     changePhase('requesting');
+    started.current = performance.now(); lastDuration.current = undefined; setDurationMs(undefined);
     setError('');
     setInterim('');
     transcript.current = '';
@@ -145,6 +149,8 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
           recognition.current = null;
           release();
           const text = transcript.current.trim();
+          lastDuration.current = Math.round(performance.now() - started.current);
+          setDurationMs(lastDuration.current);
           if (!failed.current && text) sessionSettings.onComplete?.(text);
           else if (!text && !failed.current) fail('Nenhuma fala detectada. Toque no microfone para tentar novamente.');
         };
@@ -179,7 +185,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
     stream.current?.getTracks().forEach(track => track.stop());
     if (url.current) URL.revokeObjectURL(url.current);
   }, []);
-  return { phase, error, audioUrl, interim, canRecord, canRecognize, start, stop, cancel, cancelRequest: cancel, clearAudio };
+  return { phase, error, audioUrl, interim, durationMs, getDurationMs: () => lastDuration.current, canRecord, canRecognize, start, stop, cancel, cancelRequest: cancel, clearAudio };
 }
 
 export type SpeechOutcome = 'ended' | 'canceled' | 'error' | 'unavailable';
@@ -205,14 +211,14 @@ function useNativeSpeechOutput() {
     setSpeaking(false);
     setBusy(false);
   }, [supported]);
-  const speak = useCallback((text: string): Promise<SpeechOutcome> => {
+  const speak = useCallback((text: string, onPlaying?: () => void): Promise<SpeechOutcome> => {
     if (!supported) return Promise.resolve('unavailable');
     stop();
     const token = ++generation.current;
     setError('');
     setBusy(true);
     return new Promise(resolve => {
-      const utterance = new SpeechSynthesisUtterance(text.slice(0, 4000));
+      const utterance = new SpeechSynthesisUtterance(speechText(text));
       currentUtterance.current = utterance;
       utterance.lang = 'pt-BR';
       const available = window.speechSynthesis.getVoices();
@@ -245,6 +251,7 @@ function useNativeSpeechOutput() {
         clearTimeout(timeout);
         timeout = setTimeout(fail, 360_000);
         setSpeaking(true);
+        onPlaying?.();
       };
       utterance.onend = () => { if (token === generation.current) complete('ended'); };
       utterance.onerror = event => {
@@ -279,13 +286,35 @@ export function useSpeechOutput(cloudAvailable = false) {
   const [speaking, setSpeaking] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [timings, setTimings] = useState<{ prepareMs?: number; firstAudioMs: number; engine: string }>();
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const objectUrl = useRef('');
   const finish = useRef<((outcome: SpeechOutcome) => void) | null>(null);
-  // Retain just the last generated clip in memory for explicit replay on phones.
-  const cached = useRef<{ text: string; blob: Blob } | null>(null);
+  // Retain up to two clips in memory for explicit replay, including segmented speech.
+  const cached = useRef(new Map<string, Blob>());
+  const cache = useCallback((text: string, blob: Blob) => {
+    cached.current.delete(text); cached.current.set(text, blob);
+    while (cached.current.size > 2) cached.current.delete(cached.current.keys().next().value!);
+  }, []);
+  const prepare = useCallback(async (text: string, signal: AbortSignal) => {
+    if (!cloudAvailable || engine === 'browser') return;
+    const prose = speechText(text);
+    if (!prose || cached.current.has(prose)) return;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) cancel();
+    const timer = setTimeout(cancel, 25_000);
+    try {
+      const blob = await requestSpeech(prose, controller.signal);
+      if (!signal.aborted) cache(prose, blob);
+    } catch (cause) {
+      if (controller.signal.aborted && !signal.aborted) throw new SpeechRequestError('O serviço de voz demorou para preparar a segunda parte.');
+      throw cause;
+    } finally { clearTimeout(timer); signal.removeEventListener('abort', cancel); }
+  }, [cloudAvailable, engine, cache]);
   const stop = useCallback(() => {
     generation.current++;
     finish.current?.('canceled');
@@ -299,15 +328,18 @@ export function useSpeechOutput(cloudAvailable = false) {
     objectUrl.current = '';
     native.stop(); setBusy(false); setSpeaking(false);
   }, [native.stop]);
-  const speak = useCallback(async (text: string, selectedEngine: SpeechEngine = engine): Promise<SpeechOutcome> => {
+  const speak = useCallback(async (text: string, selectedEngine: SpeechEngine = engine, onPlaying?: (via: 'browser' | 'elevenlabs') => void): Promise<SpeechOutcome> => {
     stop(); setError(''); setNotice('');
+    setTimings(undefined);
+    const started = performance.now();
+    const nativePlaying = () => { setTimings({ firstAudioMs: Math.round(performance.now() - started), engine: 'aparelho' }); onPlaying?.('browser'); };
     if (selectedEngine === 'elevenlabs' && !cloudAvailable) {
       setError('O ElevenLabs não está configurado neste servidor. Confira as variáveis no Render e atualize a página.');
       return 'unavailable';
     }
-    if (!cloudAvailable || selectedEngine === 'browser') return native.speak(text);
+    if (!cloudAvailable || selectedEngine === 'browser') return native.speak(text, nativePlaying);
     const prose = speechText(text);
-    if (!prose) return selectedEngine === 'elevenlabs' ? 'unavailable' : native.speak(text);
+    if (!prose) return selectedEngine === 'elevenlabs' ? 'unavailable' : native.speak(text, nativePlaying);
     const token = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     setBusy(true);
@@ -333,7 +365,7 @@ export function useSpeechOutput(cloudAvailable = false) {
       const run = async () => {
         let blob: Blob;
         try {
-          blob = cached.current?.text === prose ? cached.current.blob : await requestSpeech(prose, controller.signal);
+          blob = cached.current.get(prose) ?? await requestSpeech(prose, controller.signal);
         } catch (cause) {
           if (token !== generation.current) return;
           if (cause instanceof SpeechRequestError && cause.status === 401) { complete('canceled'); return; }
@@ -344,14 +376,18 @@ export function useSpeechOutput(cloudAvailable = false) {
           complete('error'); return;
         }
         if (token !== generation.current) return;
-        cached.current = { text: prose, blob };
+        cache(prose, blob);
+        const prepareMs = Math.round(performance.now() - started);
         clearTimeout(timer);
         objectUrl.current = URL.createObjectURL(blob);
         const player = new Audio(objectUrl.current); audio.current = player;
+        let notified = false;
         player.onplaying = () => {
           if (token !== generation.current) return;
           setNotice('Voz reproduzida: ElevenLabs.');
           setSpeaking(true); clearTimeout(timer); timer = setTimeout(playbackFailed, 360_000);
+          setTimings({ prepareMs, firstAudioMs: Math.round(performance.now() - started), engine: 'ElevenLabs' });
+          if (!notified) { notified = true; onPlaying?.('elevenlabs'); }
         };
         player.onended = () => { if (token === generation.current) complete('ended'); };
         player.onerror = playbackFailed;
@@ -362,13 +398,56 @@ export function useSpeechOutput(cloudAvailable = false) {
       void run().catch(() => playbackFailed());
     });
     if (token !== generation.current) return 'canceled';
-    return providerFailed && selectedEngine === 'auto' && native.supported ? native.speak(text) : outcome;
-  }, [cloudAvailable, engine, native.speak, native.supported, stop]);
+    return providerFailed && selectedEngine === 'auto' && native.supported ? native.speak(text, nativePlaying) : outcome;
+  }, [cloudAvailable, engine, native.speak, native.supported, stop, cache]);
   const chooseEngine = (value: SpeechEngine) => {
     stop(); setEngine(value); setError(''); setNotice('');
     try { localStorage.setItem('jarvis.speech-engine.v1', value); } catch { /* Session preference still works. */ }
   };
-  useEffect(() => () => { stop(); cached.current = null; }, [stop]);
+  useEffect(() => () => { stop(); cached.current.clear(); }, [stop]);
   return { ...native, supported: native.supported || cloudAvailable, busy: busy || native.busy,
-    speaking: speaking || native.speaking, error: error || native.error, notice, engine, chooseEngine, cloudAvailable, speak, stop };
+    speaking: speaking || native.speaking, error: error || native.error, notice, timings, engine, chooseEngine, cloudAvailable, speak, prepare, stop };
+}
+
+export function useSpeechInterrupt(enabled: boolean, spokenText: string, onInterrupt: () => void) {
+  const [error, setError] = useState('');
+  const callback = useRef(onInterrupt); callback.current = onInterrupt;
+  const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+  useEffect(() => {
+    if (!enabled || document.hidden) return;
+    const Constructor = getRecognition();
+    if (!Constructor) return;
+    let active = true; let instance: Recognition | undefined; let timer: ReturnType<typeof setTimeout>; let restarts = 0;
+    setError('');
+    const start = () => {
+      if (!active || document.hidden) return;
+      const recognition = new Constructor(); instance = recognition;
+      recognition.lang = 'pt-BR'; recognition.continuous = true; recognition.interimResults = false;
+      recognition.onresult = event => {
+        if (!active || instance !== recognition) return;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (!event.results[i].isFinal) continue;
+          const text = normalize(event.results[i][0].transcript);
+          if (/^jarvis (pare|parar|pausa|pause|silencio)$/.test(text) && !normalize(spokenText).includes(text)) {
+            active = false; recognition.abort(); callback.current(); return;
+          }
+        }
+      };
+      recognition.onerror = event => {
+        if (!active || event.error === 'aborted') return;
+        active = false; recognition.abort();
+        setError('Interrupção por voz indisponível nesta sessão. Use o botão central.');
+      };
+      recognition.onend = () => {
+        if (!active || instance !== recognition) return;
+        instance = undefined;
+        if (++restarts <= 2) timer = setTimeout(start, 500);
+        else { active = false; setError('A escuta para interromper terminou. Use o botão central.'); }
+      };
+      try { recognition.start(); } catch { active = false; setError('Este navegador não permite ouvir durante a resposta. Use o botão central.'); }
+    };
+    start();
+    return () => { active = false; clearTimeout(timer); instance?.abort(); };
+  }, [enabled, spokenText]);
+  return error;
 }

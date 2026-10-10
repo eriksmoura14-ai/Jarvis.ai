@@ -4,6 +4,7 @@ import serveStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { PassThrough } from 'node:stream';
 import { NoteStore } from './database.js';
 import { LocalProvider } from './providers/local.js';
 import { HybridProvider } from './providers/hybrid.js';
@@ -11,7 +12,7 @@ import { ModelError, ModelProvider, type AIConfig } from './providers/model.js';
 import { ResearchProvider } from './providers/research.js';
 import { SearchError, WebSearch } from './search.js';
 import type { AssistantProvider } from './providers/types.js';
-import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse, type Message } from '../shared/contracts.js';
+import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse, type Message, type ChatStreamEvent } from '../shared/contracts.js';
 import { validSources, validSearchInfo } from '../shared/search.js';
 import { PersonalAuth, type PersonalConfig } from './personal/auth.js';
 import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type DocumentBackend } from './personal/store.js';
@@ -74,7 +75,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.get('/api/health', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
-    return { status: 'ok', provider: provider.name, version: '0.1.0', webSearch: { enabled: true },
+    return { status: 'ok', provider: provider.name, version: '0.1.0', streaming: true, webSearch: { enabled: true },
       ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
@@ -148,7 +149,7 @@ export async function buildApp(options: AppOptions = {}) {
         type: 'object', additionalProperties: false, required: ['message', 'sessionId', 'timeZone'],
         properties: {
           message: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
-          webSearch: { type: 'boolean' },
+          webSearch: { type: 'boolean' }, stream: { type: 'boolean' }, voice: { type: 'boolean' },
           sessionId: { type: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' },
           timeZone: { type: 'string', minLength: 1, maxLength: 100 },
           context: { type: 'array', maxItems: MAX_CONTEXT_MESSAGES, items: {
@@ -168,12 +169,26 @@ export async function buildApp(options: AppOptions = {}) {
     const controller = new AbortController();
     const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on('close', disconnected);
-    try {
+    const started = performance.now();
+    let firstTextMs: number | undefined;
+    const respond = async (emit?: (event: ChatStreamEvent) => void) => {
+      controller.signal.throwIfAborted();
       const command = personal && !request.body.webSearch ? await memoryCommand(request.body, personal) : undefined;
       const record = personal ? await personal.snapshotRecord() : undefined;
+      controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
       const body = record ? { ...request.body, sessionId: 'owner', context: record.context, personalMemory: record.snapshot.memories.map(memory => memory.content) } : request.body;
-      const response: ChatResponse = { ...(command?.response ?? await assistant.respond(body, controller.signal)), id: randomUUID(), createdAt: new Date().toISOString() };
+      const prepared = performance.now();
+      let lastEmit = -Infinity;
+      const progress = emit ? (text: string) => {
+        controller.signal.throwIfAborted();
+        firstTextMs ??= Math.round(performance.now() - started);
+        // Snapshots allow research fallback to replace a failed partial summary.
+        if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: text.slice(0, 6000) }); }
+      } : undefined;
+      const response: ChatResponse = { ...(command?.response ?? await assistant.respond(body, controller.signal, progress)), id: randomUUID(), createdAt: new Date().toISOString() };
+      controller.signal.throwIfAborted();
+      const answered = performance.now();
       if (personal && snapshot) {
         if (response.message.length > 6000) response.message = response.message.slice(0, 5800) + (response.command === 'note-list'
           ? '\n\nLista limitada. Consulte as notas completas em Preferências → Memória pessoal.' : '\n\nTexto limitado a 6000 caracteres.');
@@ -182,9 +197,37 @@ export async function buildApp(options: AppOptions = {}) {
             ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], command?.generation ?? snapshot.generation);
         if (!appended) throw new PersonalError('Sua memória ou conversa mudou enquanto eu respondia. Envie a pergunta novamente para usar o contexto atualizado.', 409);
       }
-      reply.header('Cache-Control', 'no-store');
+      response.timings = { preparationMs: Math.round(prepared - started), answerMs: Math.round(answered - prepared),
+        saveMs: Math.round(performance.now() - answered), totalMs: Math.round(performance.now() - started),
+        ...(firstTextMs !== undefined ? { firstTextMs } : {}) };
       return response;
-    } finally { reply.raw.removeListener('close', disconnected); }
+    };
+    if (!request.body.stream) {
+      try { return await respond(); }
+      finally { reply.raw.removeListener('close', disconnected); }
+    }
+    const output = new PassThrough({ highWaterMark: 64_000 });
+    let bytes = 0;
+    const emit = (event: ChatStreamEvent) => {
+      if (controller.signal.aborted || output.destroyed) return;
+      const line = JSON.stringify(event) + '\n';
+      // Leave room for the final result. A slow reader cannot build an unbounded queue.
+      if (event.type === 'text' && bytes + Buffer.byteLength(line) > 600_000) return;
+      bytes += Buffer.byteLength(line);
+      if (!output.write(line)) controller.abort();
+    };
+    reply.type('application/x-ndjson; charset=utf-8').header('X-Accel-Buffering', 'no');
+    emit({ type: 'ready' });
+    void respond(emit).then(response => emit({ type: 'result', response })).catch(error => {
+      if (controller.signal.aborted) return;
+      const known = error instanceof ModelError || error instanceof SearchError || error instanceof PersonalError;
+      if (!known) request.log.error(error);
+      emit({ type: 'error', error: known ? error.message : 'O assistente encontrou um erro. Tente novamente.' });
+    }).finally(() => {
+      output.end();
+      reply.raw.removeListener('close', disconnected);
+    });
+    return reply.send(output);
   });
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ModelError || error instanceof SearchError || error instanceof PersonalError || error instanceof SpeechError) return reply.code(error.statusCode).send({ error: error.message });

@@ -11,15 +11,22 @@ import { SearchSources } from './components/SearchSources';
 import { SearchToggle } from './components/SearchToggle';
 import { Dialog } from './components/Dialog';
 import { useGamepad } from './hooks/useGamepad';
-import { useSpeechOutput, useVoiceInput } from './hooks/useVoice';
+import { useSpeechOutput, useVoiceInput, useSpeechInterrupt, type SpeechOutcome } from './hooks/useVoice';
 import { BROWSER_MODE, checkHealth, sendMessage } from './lib/api';
 import { HISTORY_KEY, MAX_HISTORY, loadHistory, loadSession, loadVoicePreference, loadView, makeId } from './lib/storage';
 import { MAX_MESSAGE_LENGTH, type Message } from '../shared/contracts';
 import type { HealthResponse } from '../shared/contracts';
 import { conversationContext } from '../shared/context';
 import { loadBackend } from './lib/backend';
+import { speechParts } from '../shared/speech';
+import { loadReception, personalGreeting, RECEPTION_KEY } from './lib/reception';
+import { Reception, ReceptionSettings } from './components/Reception';
+import { ConversationTiming, type TurnTiming } from './components/ConversationTiming';
+
+const loadToggle = (key: string, fallback = false) => { try { const value = localStorage.getItem(key); return value === null ? fallback : value === 'true'; } catch { return fallback; } };
 
 const welcome = (): Message => ({ id: 'welcome', role: 'assistant', content: 'Olá, sou o JARVIS. Seu espaço para pensar, organizar e resolver. Experimente um comando abaixo ou digite “ajuda” para começar.', createdAt: new Date().toISOString() });
+const lastSpokenText = (messages: Message[]) => [...messages].reverse().find(message => message.role === 'assistant')?.content ?? '';
 const commands = [
   { icon: Clock3, title: 'Que horas são?', command: 'Que horas são?', detail: 'Horário no seu fuso' },
   { icon: NotebookPen, title: 'Guardar uma nota', command: 'anotar ', detail: 'Suas ideias, organizadas' },
@@ -39,6 +46,14 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   const [spokenText, setSpokenText] = useState('');
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
+  const [readingParts, setReadingParts] = useState(false);
+  const [partial, setPartial] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [timing, setTiming] = useState<TurnTiming>();
+  const [connectionMs, setConnectionMs] = useState<number>();
+  const [fastVoice, setFastVoice] = useState(() => loadToggle('jarvis.fast-voice.v1', true));
+  const [voiceInterrupt, setVoiceInterrupt] = useState(() => loadToggle('jarvis.voice-interrupt.v1'));
+  const [reception, setReception] = useState(loadReception);
   const [error, setError] = useState('');
   const [storageError, setStorageError] = useState(false);
   const [health, setHealth] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -65,7 +80,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   const turn = useRef(0);
   const request = useRef<AbortController | null>(null);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendRef = useRef<(text: string, source?: 'text' | 'voice') => Promise<void>>(async () => {});
+  const sendRef = useRef<(text: string, source?: 'text' | 'voice') => Promise<boolean>>(async () => false);
   const startVoiceRef = useRef<() => void>(() => {});
   const interruptRef = useRef<(message?: string) => void>(() => {});
   viewRef.current = view;
@@ -88,7 +103,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
     },
     onFailure: () => { microphoneActive.current = false; sessionActive.current = false; continuousRef.current = false; setContinuous(false); },
   });
-  const state = voice.phase === 'recording' ? 'listening' : pending || (output.busy && !output.speaking) ? 'thinking' : output.busy ? 'speaking' : 'idle';
+  const state = voice.phase === 'recording' ? 'listening' : pending || ((output.busy || readingParts) && !output.speaking) ? 'thinking' : output.busy || readingParts ? 'speaking' : 'idle';
   const stateLabel = { listening: 'À escuta', thinking: 'Processando', speaking: 'Falando', idle: health === 'online' ? 'Pronto para conversar' : health === 'checking' ? 'Conectando ao assistente' : 'Servidor indisponível' }[state];
 
   useEffect(() => {
@@ -96,9 +111,12 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
       if (!personal) localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
       localStorage.setItem('jarvis.voice.v1', String(autoVoice));
       localStorage.setItem('jarvis.view.v1', view);
+      localStorage.setItem('jarvis.fast-voice.v1', String(fastVoice));
+      localStorage.setItem('jarvis.voice-interrupt.v1', String(voiceInterrupt));
+      localStorage.setItem(RECEPTION_KEY, JSON.stringify(reception));
       setStorageError(false);
     } catch { setStorageError(true); }
-  }, [messages, autoVoice, view, personal]);
+  }, [messages, autoVoice, view, personal, fastVoice, voiceInterrupt, reception]);
   useEffect(() => {
     let mounted = true;
     let request: AbortController | undefined;
@@ -108,8 +126,9 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
       request = new AbortController();
       const current = request;
       timeout = setTimeout(() => current.abort(), 5000);
-      try { const result = await checkHealth(current.signal); if (mounted && request === current) { setHealth('online'); setModel(result.ai); setModelOffline(false); setSearchEnabled(result.webSearch?.enabled === true); setCloudSpeech(!BROWSER_MODE && result.speech?.configured === true); } }
-      catch { if (mounted && request === current) { setHealth(BROWSER_MODE ? 'online' : 'offline'); setModel(undefined); setModelOffline(true); setSearchEnabled(false); setCloudSpeech(false); } }
+      const started = performance.now();
+      try { const result = await checkHealth(current.signal); if (mounted && request === current) { setConnectionMs(Math.round(performance.now() - started)); setStreaming(result.streaming === true); setHealth('online'); setModel(result.ai); setModelOffline(false); setSearchEnabled(result.webSearch?.enabled === true); setCloudSpeech(!BROWSER_MODE && result.speech?.configured === true); } }
+      catch { if (mounted && request === current) { setHealth(BROWSER_MODE ? 'online' : 'offline'); setModel(undefined); setModelOffline(true); setSearchEnabled(false); setCloudSpeech(false); setStreaming(false); } }
       finally { clearTimeout(timeout); }
     };
     void verify();
@@ -122,7 +141,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   }, []);
   useEffect(() => {
     if (log.current && shouldScroll.current) { log.current.scrollTop = log.current.scrollHeight; setNearBottom(true); }
-  }, [messages, pending]);
+  }, [messages, pending, partial]);
   const interrupt = useCallback((message = 'Conversa pausada. Toque no microfone para começar novamente.') => {
     turn.current++;
     microphoneActive.current = false;
@@ -135,6 +154,8 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
     output.stop();
     sending.current = false;
     setPending(false);
+    setReadingParts(false);
+    setPartial('');
     setNotice(message);
   }, [voice.cancel, output.stop]);
   interruptRef.current = interrupt;
@@ -191,13 +212,61 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
     void voice.start();
   };
   startVoiceRef.current = startVoice;
-  const handleSend = async (text: string, source: 'text' | 'voice' = 'text') => {
+  const speakResponse = async (text: string, signal: AbortSignal, token: number, onFirst?: () => void): Promise<SpeechOutcome> => {
+    setReadingParts(true);
+    const parts = fastVoice ? speechParts(text) : [text];
+    let outcome: SpeechOutcome = 'ended';
+    let prepared: Promise<boolean> | undefined;
+    const preparation = new AbortController();
+    const cancelPreparation = () => preparation.abort();
+    signal.addEventListener('abort', cancelPreparation, { once: true });
+    if (signal.aborted) cancelPreparation();
+    try {
+      for (let index = 0; index < parts.length; index++) {
+        if (token !== turn.current || signal.aborted) return 'canceled';
+        if (index > 0 && prepared && !await prepared) {
+          if (token !== turn.current || signal.aborted) return 'canceled';
+          if (output.engine === 'auto') {
+            setNotice(previous => `${previous} Usando a voz do aparelho para concluir.`);
+            outcome = await output.speak(parts[index], 'browser');
+          } else outcome = 'error';
+          break;
+        }
+        if (token !== turn.current || signal.aborted) return 'canceled';
+        outcome = await output.speak(parts[index], undefined, via => {
+          if (token !== turn.current) return;
+          if (index === 0) {
+            onFirst?.();
+            if (parts[1] && via === 'elevenlabs') {
+              prepared = output.prepare(parts[1], preparation.signal).then(() => true, cause => {
+                if (token === turn.current && !preparation.signal.aborted) setNotice(cause instanceof Error ? cause.message : 'A segunda parte da voz ficou indisponível. A resposta completa está no texto.');
+                return false;
+              });
+            }
+          }
+        });
+        if (outcome !== 'ended') break;
+      }
+      return outcome;
+    } finally { cancelPreparation(); signal.removeEventListener('abort', cancelPreparation); if (token === turn.current) setReadingParts(false); }
+  };
+  const replayResponse = (text: string) => {
+    interrupt('');
+    const token = turn.current; const current = new AbortController(); request.current = current;
+    void speakResponse(text, current.signal, token).finally(() => { if (token === turn.current) request.current = null; });
+  };
+  const handleSend = async (text: string, source: 'text' | 'voice' | 'briefing' = 'text') => {
     const content = text.trim().slice(0, MAX_MESSAGE_LENGTH);
-    if (!content || sending.current || (source === 'text' && voice.phase !== 'idle')) return;
+    if (!content || sending.current || (source !== 'voice' && voice.phase !== 'idle')) return false;
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
     output.stop();
-    if (source === 'text') sessionActive.current = false;
+    if (source !== 'voice') sessionActive.current = false;
+    setReadingParts(false);
+    request.current?.abort();
     const token = ++turn.current;
+    const started = performance.now();
+    setTiming(source === 'voice' ? { recognitionMs: voice.getDurationMs() } : {});
+    setPartial('');
     const current = new AbortController();
     request.current = current;
     sending.current = true;
@@ -211,17 +280,22 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
     const user: Message = { id: makeId(), role: 'user', content, createdAt: new Date().toISOString() };
     setMessages(previous => [...previous, user].slice(-MAX_HISTORY));
     try {
-      const response = await sendMessage({ message: content, sessionId, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', context: conversationContext(messages), ...(webSearch ? { webSearch: true } : {}) }, current.signal);
-      if (token !== turn.current) return;
+      const response = await sendMessage({ message: content, sessionId, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', context: conversationContext(messages), ...(source === 'voice' || (source === 'briefing' && reception.readNews) ? { voice: true } : {}), ...(webSearch || source === 'briefing' ? { webSearch: true } : {}), ...(streaming ? { stream: true } : {}) }, current.signal, {
+        onReady: () => { if (token === turn.current) setTiming(previous => ({ ...previous, readyMs: Math.round(performance.now() - started) })); },
+        onText: text => { if (token === turn.current) { setPartial(text); setTiming(previous => ({ ...previous, firstTextMs: previous?.firstTextMs ?? Math.round(performance.now() - started) })); } },
+      });
+      if (token !== turn.current) return false;
+      setPartial('');
+      setTiming(previous => ({ ...previous, requestMs: Math.round(performance.now() - started), firstTextMs: previous?.firstTextMs ?? Math.round(performance.now() - started), server: response.timings }));
       setMessages(previous => [...previous, { id: response.id, role: 'assistant' as const, content: response.message, createdAt: response.createdAt, provider: response.provider, sources: response.sources, webSearch: response.webSearch }].slice(-MAX_HISTORY));
       setHealth('online');
       sending.current = false;
       setPending(false);
-      if (personal) await refreshPersonal().catch(() => setNotice('Resposta recebida. A sincronização será tentada novamente.'));
-      if (token !== turn.current) return;
+      if (personal) void refreshPersonal().catch(() => setNotice('Resposta recebida. A sincronização será tentada novamente.'));
+      if (token !== turn.current) return false;
       const inVoice = viewRef.current === 'voice';
-      if (inVoice ? soundRef.current : autoVoice) {
-        const outcome = await output.speak(response.message);
+      if (source === 'briefing' ? reception.readNews : inVoice ? soundRef.current : autoVoice) {
+        const outcome = await speakResponse(response.message, current.signal, token, () => setTiming(previous => ({ ...previous, firstAudioMs: Math.round(performance.now() - started) })));
         if (token === turn.current && inVoice && outcome === 'ended' && continuousRef.current && sessionActive.current && !document.hidden) {
           resumeTimer.current = setTimeout(() => { if (token === turn.current && viewRef.current === 'voice' && continuousRef.current && sessionActive.current && !document.hidden) startVoiceRef.current(); }, 350);
         } else if (token === turn.current && outcome !== 'ended') {
@@ -230,19 +304,26 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
           setContinuous(false);
         }
       }
+      return true;
     } catch (cause) {
-      if (token !== turn.current) return;
+      if (token !== turn.current) return false;
+      setPartial('');
       sessionActive.current = false;
       continuousRef.current = false;
       setContinuous(false);
       setError(cause instanceof Error ? cause.message : 'Não foi possível enviar. Tente novamente.');
       setDraft(previous => previous || content);
       setMessages(previous => previous.filter(message => message.id !== user.id));
+      return false;
     } finally {
       if (token === turn.current) { request.current = null; sending.current = false; setPending(false); }
     }
   };
   sendRef.current = handleSend;
+  const interruptError = useSpeechInterrupt(voiceInterrupt && view === 'voice' && output.speaking && sessionActive.current, lastSpokenText(messages), () => interrupt('Resposta interrompida pela sua voz. Toque no microfone para continuar.'));
+  const greeting = personalGreeting(personalData?.memories ?? [], clock);
+  const receptionPanel = personal ? <Reception preferences={reception} greeting={greeting} enabled={searchEnabled} busy={pending || output.busy || readingParts || voice.phase !== 'idle' || !!modal} speechSupported={output.supported}
+    onSpeak={() => { interrupt(''); void output.speak(greeting); }} onNews={() => handleSend(`pesquise últimas notícias sobre ${reception.topic.trim() || 'tecnologia'}`, 'briefing')} /> : undefined;
   const changeView = (value: 'voice' | 'chat') => {
     interrupt('');
     voice.clearAudio();
@@ -263,22 +344,22 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   return <div className={view === 'voice' ? 'voice-shell' : 'app-shell'}>
     <a className="skip-link" href={view === 'voice' ? '#main' : '#message-input'}>{view === 'voice' ? 'Ir para o assistente' : 'Ir para a mensagem'}</a>
     {view === 'voice' && <VoiceScene
-      state={state} phase={voice.phase} pending={pending} speechBusy={output.busy}
+      state={state} phase={voice.phase} pending={pending} speechBusy={output.busy || readingParts}
       canListen={voice.canRecognize} speechSupported={output.supported} sound={voiceSound}
       continuous={continuous} status={stateLabel}
       connection={health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}
       modelStatus={modelStatus}
       searchEnabled={searchEnabled} webSearch={webSearch} onWebSearch={setWebSearch}
       sources={lastResponse?.sources} searchInfo={lastResponse?.webSearch}
-      error={error || voice.error || output.error} notice={notice || output.notice} transcript={voice.interim || spokenText}
-      reply={lastReply} draft={draft} storageError={storageError} textareaRef={textarea}
+      error={error || voice.error || output.error} notice={interruptError || notice || output.notice} transcript={voice.interim || spokenText}
+      reply={partial || lastReply} reception={receptionPanel} draft={draft} storageError={storageError} textareaRef={textarea}
       onDraft={setDraft} onSend={() => void handleSend(draft)}
-      onMicrophone={() => { if (voice.phase === 'requesting') interrupt(); else if (voice.phase === 'recording') voice.stop(); else if (pending || output.busy) interrupt(); else startVoice(); }}
+      onMicrophone={() => { if (voice.phase === 'requesting') interrupt(); else if (voice.phase === 'recording') voice.stop(); else if (pending || output.busy || readingParts) interrupt(); else startVoice(); }}
       onInterrupt={() => interrupt()} onSound={() => { interrupt(''); soundRef.current = !voiceSound; setVoiceSound(!voiceSound); }}
       onContinuous={value => { continuousRef.current = value; setContinuous(value); if (!value) sessionActive.current = false; }}
       onChat={() => changeView('chat')} onHistory={() => openVoiceModal('history')}
       onSettings={() => openVoiceModal('settings')} onHelp={() => openVoiceModal('help')}
-      onReplay={() => { interrupt(''); void output.speak(lastReply); }}
+      onReplay={() => replayResponse(lastReply)}
     />}
     {view === 'chat' && <>
     <aside className="sidebar" aria-label="Navegação principal">
@@ -306,6 +387,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
             <span className="hero-coordinate" aria-hidden="true">J / 01</span>
           </div>
 
+          {receptionPanel}
           <div className="quick-actions" aria-label="Sugestões de comandos">{commands.map(({ icon: Icon, title, command, detail }) => <button data-gamepad key={title} onClick={() => chooseCommand(command)} disabled={pending || voice.phase !== 'idle'}><span className="action-icon"><Icon size={18} /></span><span><strong>{title}</strong><small>{detail}</small></span><ArrowRight size={16} className="action-arrow" /></button>)}</div>
 
           <section className="chat-panel" aria-labelledby="chat-heading">
@@ -313,9 +395,10 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
             <div ref={log} className="message-log" role="log" aria-label="Mensagens da conversa" aria-live="polite" aria-relevant="additions" tabIndex={0} onScroll={() => { if (log.current) { const bottom = log.current.scrollHeight - log.current.scrollTop - log.current.clientHeight < 60; shouldScroll.current = bottom; setNearBottom(bottom); } }}>
               {messages.map(message => <article className={`message message-${message.role}`} key={message.id}>
                 <span className={`message-avatar ${message.role === 'assistant' ? 'jarvis-avatar' : ''}`} aria-hidden="true">{message.role === 'assistant' ? 'J' : 'U'}</span>
-                <div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong>{message.role === 'assistant' && <span className="message-badge">{message.webSearch ? 'WEB' : message.provider && message.provider !== 'local' ? 'IA' : 'LOCAL'}</span>}<time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p><SearchSources sources={message.sources} info={message.webSearch} />{message.role === 'assistant' && output.supported && <button data-gamepad className="read-button" onClick={() => output.speak(message.content)} aria-label="Ouvir resposta"><Volume2 size={13} /> Ouvir</button>}</div>
+                <div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong>{message.role === 'assistant' && <span className="message-badge">{message.webSearch ? 'WEB' : message.provider && message.provider !== 'local' ? 'IA' : 'LOCAL'}</span>}<time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p><SearchSources sources={message.sources} info={message.webSearch} />{message.role === 'assistant' && output.supported && <button data-gamepad className="read-button" onClick={() => replayResponse(message.content)} aria-label="Ouvir resposta"><Volume2 size={13} /> Ouvir</button>}</div>
               </article>)}
-              {pending && <div className="thinking" role="status"><span className="message-avatar jarvis-avatar">J</span><span className="thinking-dots"><i /><i /><i /></span><span>Processando seu pedido</span></div>}
+              {partial && <article className="message message-assistant" aria-label="Resposta em andamento"><span className="message-avatar jarvis-avatar">J</span><div className="message-body"><div className="message-meta"><strong>JARVIS</strong><span>Respondendo…</span></div><p>{partial}</p></div></article>}
+              {pending && !partial && <div className="thinking" role="status"><span className="message-avatar jarvis-avatar">J</span><span className="thinking-dots"><i /><i /><i /></span><span>Processando seu pedido</span></div>}
             </div>
             {!nearBottom && <button data-gamepad className="latest-button" onClick={() => { shouldScroll.current = true; if (log.current) log.current.scrollTop = log.current.scrollHeight; setNearBottom(true); }}><ArrowDown size={14} /> Últimas mensagens</button>}
             <div className="composer-area">
@@ -327,7 +410,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
               <form className={`composer ${voice.phase === 'recording' ? 'is-recording' : ''}`} onSubmit={submit}>
                 <textarea data-gamepad ref={textarea} id="message-input" aria-label="Sua mensagem para JARVIS" placeholder="O que vamos fazer hoje?" rows={1} maxLength={MAX_MESSAGE_LENGTH} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void handleSend(draft); } }} />
                 <span className="composer-divider" />
-                <button data-gamepad type="button" className={`mic-button ${voice.phase === 'recording' ? 'recording' : ''}`} aria-label={voice.phase === 'recording' ? 'Parar gravação' : voice.phase === 'requesting' ? 'Cancelar solicitação do microfone' : 'Ativar microfone'} aria-pressed={voice.phase === 'recording'} disabled={!voice.canRecord || pending} title={!voice.canRecord ? 'Microfone indisponível. Use HTTPS e um navegador compatível ou digite.' : 'Ativar microfone; o navegador pode usar um serviço de reconhecimento de voz.'} onClick={() => { output.stop(); if (voice.phase === 'requesting') voice.cancelRequest(); else if (voice.phase === 'recording') voice.stop(); else void voice.start(); }}>{voice.phase !== 'idle' ? <Square size={18} /> : <Mic size={20} />}</button>
+                <button data-gamepad type="button" className={`mic-button ${voice.phase === 'recording' ? 'recording' : ''}`} aria-label={voice.phase === 'recording' ? 'Parar gravação' : voice.phase === 'requesting' ? 'Cancelar solicitação do microfone' : 'Ativar microfone'} aria-pressed={voice.phase === 'recording'} disabled={!voice.canRecord || pending} title={!voice.canRecord ? 'Microfone indisponível. Use HTTPS e um navegador compatível ou digite.' : 'Ativar microfone; o navegador pode usar um serviço de reconhecimento de voz.'} onClick={() => { if (voice.phase === 'idle') interrupt(''); else output.stop(); if (voice.phase === 'requesting') voice.cancelRequest(); else if (voice.phase === 'recording') voice.stop(); else void voice.start(); }}>{voice.phase !== 'idle' ? <Square size={18} /> : <Mic size={20} />}</button>
                 <button data-gamepad className="send-button" type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || pending || voice.phase !== 'idle'}><Send size={18} /></button>
               </form>
               <SearchToggle enabled={searchEnabled} checked={webSearch} disabled={pending || voice.phase !== 'idle'} onChange={setWebSearch} />
@@ -352,7 +435,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
     {modal && <Dialog key={modal} title={modal === 'help' ? 'O que o JARVIS pode fazer' : modal === 'settings' ? 'Seu assistente, do seu jeito' : modal === 'history' ? 'Histórico da conversa' : modal === 'memory' ? 'Memória pessoal' : 'Limpar esta conversa?'} onClose={closeModal}>
       {modal === 'help' && <><p className="modal-description">{model ? 'Faça perguntas e peça ajuda com textos e estudos. Para notas e cálculos, use os comandos abaixo.' : 'Os comandos abaixo já funcionam. A conversa com IA exige um backend e um modelo configurados em Preferências.'}</p><div className="command-list">{[['hora', 'Consultar o horário'], ['data', 'Ver a data de hoje'], ['calcular (12 + 8) / 2', 'Calcular uma expressão'], ['pesquise ', 'Pesquisar na web com fontes'], ['anotar ', personal ? 'Guardar uma nota na sua conta' : BROWSER_MODE ? 'Guardar uma nota neste navegador' : 'Guardar uma nota no SQLite'], ...(personal ? [['lembre que ', 'Salvar uma preferência pessoal'], ['minhas memórias', 'Consultar memórias salvas'], ['qual é meu nome', 'Consultar seu nome salvo'], ['corrija memória 1 para ', 'Corrigir uma memória'], ['esqueça memória 1', 'Apagar uma memória']] : []), ['notas', 'Ler suas notas'], ['apagar notas', 'Excluir todas as suas notas']].map(([command, label]) => <button data-gamepad key={command} disabled={pending || voice.phase !== 'idle'} onClick={() => { closeModal(); chooseCommand(command); }}><span><strong>{label}</strong><code>{command === 'anotar ' ? 'anotar comprar leite' : command === 'pesquise ' ? 'pesquise notícias de tecnologia' : command}</code></span><ArrowRight size={17} /></button>)}</div><p className="privacy-note">{personal ? '“Apagar notas” remove as notas da conta. Limpar o histórico preserva notas e memórias.' : BROWSER_MODE ? '“Apagar notas” exclui as notas deste navegador. Limpar a conversa preserva as notas. Elas não são sincronizadas entre dispositivos.' : '“Apagar notas” exclui as notas da sua sessão. Elas ficam no servidor e não são removidas ao limpar a conversa. Não use este MVP para informações sensíveis em um servidor público.'}</p></>}
       {modal === 'memory' && personalData && <PersonalMemory snapshot={personalData} onRefresh={refreshPersonal} onLogout={logout} />}
-      {modal === 'settings' && <>{personal && <button data-gamepad className="primary-button" onClick={() => setModal('memory')}>Memória pessoal</button>}<p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente no chat</strong><small>{output.supported ? 'Usa o tipo de voz escolhido abaixo.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><SpeechSettings output={output} />{BROWSER_MODE ? <AIConnection onChange={() => { interrupt(''); setBackendRevision(previous => previous + 1); }} /> : <p className="privacy-note">{modelStatus}. O modelo é configurado no servidor. Mensagens recentes acompanham perguntas à IA; a chave fica no backend.</p>}<div className="settings-detail"><ShieldCheck size={19} /><div><strong>{personal ? 'Histórico na sua conta' : 'Histórico no navegador'}</strong><p>{personal ? 'Até 100 mensagens, notas e preferências ficam no servidor e aparecem nos aparelhos conectados à sua conta. As memórias salvas podem ser enviadas à IA junto com perguntas. Você pode apagá-las em Memória pessoal.' : BROWSER_MODE ? 'Histórico e notas ficam neste navegador. Notas e cálculos são processados aqui. Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente ao servidor e ao provedor. Pesquisas enviam o assunto ao buscador; trechos dos resultados podem acompanhar o resumo por IA. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa e o contexto recente são enviados ao backend para responder, e ao provedor quando usa IA. O backend não armazena as mensagens. Notas são persistidas em SQLite por sessão. Pesquisas enviam o assunto ao buscador e os trechos ao modelo para o resumo.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>O microfone só é ativado após seu clique e permissão. No modo chat, o áudio gravado fica temporariamente neste navegador. No modo voz, apenas a transcrição entra no histórico. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
+      {modal === 'settings' && <>{personal && <button data-gamepad className="primary-button" onClick={() => setModal('memory')}>Memória pessoal</button>}<p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente no chat</strong><small>{output.supported ? 'Usa o tipo de voz escolhido abaixo.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><SpeechSettings output={output} /><label className="setting-row"><span><strong>Voz em partes</strong><small>Textos maiores usam até duas partes; a segunda é preparada enquanto a primeira toca. Mantém o limite de 1200 caracteres e pode consumir duas chamadas.</small></span><input data-gamepad type="checkbox" checked={fastVoice} onChange={event => { interrupt(''); setFastVoice(event.target.checked); }} /></label><label className="setting-row"><span><strong>Interromper dizendo “Jarvis, pare”</strong><small>Experimental. Só escuta durante uma resposta de conversa iniciada pelo microfone. Use fones para reduzir o eco. Não aceita perguntas durante a fala.</small></span><input data-gamepad type="checkbox" disabled={!voice.canRecognize} checked={voiceInterrupt} onChange={event => { interrupt(''); setVoiceInterrupt(event.target.checked); }} /></label>{personal && <ReceptionSettings value={reception} onChange={setReception} />}<ConversationTiming timing={timing} speech={output.timings} connectionMs={connectionMs} />{BROWSER_MODE ? <AIConnection onChange={() => { interrupt(''); setBackendRevision(previous => previous + 1); }} /> : <p className="privacy-note">{modelStatus}. O modelo é configurado no servidor. Mensagens recentes acompanham perguntas à IA; a chave fica no backend.</p>}<div className="settings-detail"><ShieldCheck size={19} /><div><strong>{personal ? 'Histórico na sua conta' : 'Histórico no navegador'}</strong><p>{personal ? 'Até 100 mensagens, notas e preferências ficam no servidor e aparecem nos aparelhos conectados à sua conta. As memórias salvas podem ser enviadas à IA junto com perguntas. Você pode apagá-las em Memória pessoal.' : BROWSER_MODE ? 'Histórico e notas ficam neste navegador. Notas e cálculos são processados aqui. Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente ao servidor e ao provedor. Pesquisas enviam o assunto ao buscador; trechos dos resultados podem acompanhar o resumo por IA. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa e o contexto recente são enviados ao backend para responder, e ao provedor quando usa IA. O backend não armazena as mensagens. Notas são persistidas em SQLite por sessão. Pesquisas enviam o assunto ao buscador e os trechos ao modelo para o resumo.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>O microfone só é ativado após seu clique e permissão. No modo chat, o áudio gravado fica temporariamente neste navegador. No modo voz, apenas a transcrição entra no histórico. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
       {modal === 'history' && <><p className="modal-description">{personal ? 'Suas conversas sincronizadas com a conta. Você pode continuar em outro aparelho.' : 'Suas conversas neste navegador. Você também pode continuar pelo modo chat.'}</p><div className="history-log" role="log" aria-label="Histórico de mensagens" tabIndex={0}>{messages.map(message => <article className={`message message-${message.role}`} key={message.id}><span className={`message-avatar ${message.role === 'assistant' ? 'jarvis-avatar' : ''}`} aria-hidden="true">{message.role === 'assistant' ? 'J' : 'U'}</span><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong><time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p><SearchSources sources={message.sources} info={message.webSearch} /></div></article>)}</div><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={() => setModal('clear')}>Limpar conversa</button><button data-gamepad className="primary-button" onClick={() => { closeModal(); changeView('chat'); }}>Abrir modo chat</button></div></>}
       {modal === 'clear' && <><p className="modal-description">{personal ? 'As mensagens serão removidas da conta e dos aparelhos na próxima sincronização.' : 'As mensagens serão removidas do histórico deste navegador.'} {BROWSER_MODE ? 'Suas notas neste navegador serão preservadas.' : 'Suas notas no servidor serão preservadas.'}</p><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={closeModal}>Cancelar</button><button data-gamepad className="primary-button" onClick={() => void clearConversation()}>Limpar conversa</button></div></>}
     </Dialog>}

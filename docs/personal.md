@@ -96,6 +96,21 @@ a conte novamente. Exclusões são feitas
 no banco ativo; backups do provedor e dados já enviados a serviços externos seguem
 as políticas desses serviços. Não há criptografia adicional de ponta a ponta.
 
+## Recepção e notícias
+
+Ao abrir a conta, uma saudação local usa o horário deste aparelho e o tratamento
+salvo (ou nome, se não houver tratamento). Não usa IA nem liga o microfone. O
+botão **Ouvir saudação** usa a voz escolhida e pode consumir cota ElevenLabs.
+
+Em Preferências, **Buscar notícias ao abrir** habilita uma pesquisa de até um
+assunto configurado, uma vez por dia por navegador, com a página visível e o
+assistente livre. **Ler o resumo de notícias** é uma escolha separada. Por
+padrão, ambas vêm desligadas; o botão **Resumo de notícias** funciona sob demanda.
+Os tópicos dessas buscas não são inferidos das memórias. A consulta e a resposta
+entram no histórico da conta; preferências e marcador diário ficam no aparelho.
+Uma tentativa falha não fica repetindo automaticamente. Outro aparelho pode
+fazer sua própria consulta. [Comportamento e limitações](conversation.md).
+
 ## Histórico antigo e funcionamento sem rede
 
 Não há migração automática. **Importar histórico deste navegador** envia, com seu

@@ -96,6 +96,31 @@ O endereço fica no `localStorage` deste navegador. Para remover a conexão, use
 - Por padrão, 100 tentativas/dia UTC no servidor inteiro. `AI_DAILY_LIMIT` aceita de 1 a 1.000. Tentativas que falham também contam; comandos locais não contam.
 - A contagem diária fica em SQLite e sobrevive a reinícios se o arquivo for preservado. Perder o banco ou executar réplicas com bancos diferentes permite orçamentos separados; os limites do provedor continuam sendo necessários.
 - O limite do aplicativo não estabelece o plano/cobrança da conta do provedor. Use apenas uma conta elegível com cota gratuita e sem cobrança ativada nesta etapa.
-- A API também limita mensagens por IP. CORS permite somente origens configuradas e a própria origem; **CORS não é autenticação**. Este MVP ainda não tem login, e um backend público pode receber chamadas de terceiros e consumir a cota. Para uso privado, proteja a hospedagem por autenticação ou rede privada antes de expor o serviço.
+- A API também limita mensagens por IP. CORS permite somente origens configuradas e a própria origem; **CORS não é autenticação**. Sem `JARVIS_PASSWORD`, um backend público pode receber chamadas de terceiros e consumir a cota. Para uso privado, ative o [modo pessoal com login](personal.md).
 - Interromper a conversa cancela a requisição no navegador e propaga o cancelamento ao modelo. O provedor pode já ter processado parte do pedido; a tentativa continua contando.
 - Nenhuma inferência real pode ser confirmada sem chave válida/servidor de modelo instalado. Os testes automatizados usam respostas controladas para validar protocolos, contexto, limites e erros.
+
+
+## Texto progressivo e resposta falada
+
+O frontend negocia a capacidade `streaming` pelo health check. Com `stream=true`
+no `POST /api/chat`, recebe NDJSON com eventos `ready`, `text` (texto acumulado
+provisório), `result` (resposta final) ou `error` (erro sanitizado após os headers).
+Validação/login/cotas da rota continuam ativos. Erros antes de iniciar o stream
+usam o status HTTP normal. Clientes antigos sem `stream` continuam recebendo JSON;
+o frontend também aceita JSON de backends anteriores.
+
+Groq usa SSE do Chat Completions; Ollama usa NDJSON de `/api/chat`. Só o conteúdo
+textual é mostrado, sem deltas de raciocínio. Fim explícito é obrigatório; limite
+de bytes/linha, cancelamento, timeout e cotas permanecem. O envio ao navegador é
+limitado em frequência e bytes; leitores lentos são cancelados. Comandos locais
+não acionam o modelo. A busca conserva fontes reais mesmo se o resumo falhar.
+
+O texto progressivo não entra no histórico nem é falado. No modo pessoal,
+`result` só sai após salvar com a geração correta; correções/exclusões durante a
+inferência produzem erro e removem o rascunho. O contexto de uma inferência que
+já recebeu dados não pode ser retirado do provedor retroativamente.
+
+`voice=true` pede frases curtas e linguagem falada ao modelo; não garante qualidade
+humana. [Tempos da conversa](conversation.md) separam espera da resposta e da voz,
+sem telemetria externa ou promessas de aceleração medidas apenas com fixtures.
