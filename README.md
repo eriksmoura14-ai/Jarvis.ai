@@ -98,7 +98,7 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.
 - Integração opcional com Groq e Ollama no backend, contexto de até 10 mensagens/8.000 caracteres e identificação de respostas da IA. Os comandos conhecidos têm prioridade e não consomem o modelo. A conexão externa no Pages é configurada por endereço HTTPS, sem chave no frontend.
-- Pesquisa explícita por voz/texto ou opção **Pesquisar na web**, com até cinco fontes clicáveis, trechos reais, resumo opcional pela IA e fontes preservadas no histórico. Veja [uso pessoal e limites da pesquisa](docs/search.md).
+- Pesquisa explícita por voz/texto ou opção **Pesquisar na web**, com filtro por assunto, até cinco fontes clicáveis, trechos reais e resumo opcional pela IA. Pedidos de notícias consultam fontes datadas nos últimos sete dias e exibem a data de publicação informada pelo feed. Veja [uso pessoal e limites da pesquisa](docs/search.md).
 - API com validação de corpo/contexto, limite de requisições, orçamento diário de IA persistido em SQLite, cancelamento, respostas de erro, CORS por origem explícita, cabeçalhos de segurança e consultas parametrizadas.
 
 ### Experimente

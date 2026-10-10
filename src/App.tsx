@@ -333,6 +333,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   const openVoiceModal = (value: Modal) => { interrupt(''); setModal(value); };
   const lastResponse = [...messages].reverse().find(message => message.role === 'assistant' && message.id !== 'welcome');
   const lastReply = lastResponse?.content ?? '';
+  const visibleResponse = pending || error ? undefined : lastResponse;
   const modelStatus = modelOffline && (!BROWSER_MODE || loadBackend()) ? 'IA indisponível' : model ? `IA configurada · ${model.provider === 'groq' ? 'Groq' : 'Ollama'}` : 'IA não configurada';
   const submit = (event: FormEvent) => { event.preventDefault(); void handleSend(draft); };
   const chooseCommand = (command: string) => {
@@ -350,9 +351,9 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
       connection={health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}
       modelStatus={modelStatus}
       searchEnabled={searchEnabled} webSearch={webSearch} onWebSearch={setWebSearch}
-      sources={lastResponse?.sources} searchInfo={lastResponse?.webSearch}
+      sources={visibleResponse?.sources} searchInfo={visibleResponse?.webSearch}
       error={error || voice.error || output.error} notice={interruptError || notice || output.notice} transcript={voice.interim || spokenText}
-      reply={partial || lastReply} reception={receptionPanel} draft={draft} storageError={storageError} textareaRef={textarea}
+      reply={partial || visibleResponse?.content || ''} reception={receptionPanel} draft={draft} storageError={storageError} textareaRef={textarea}
       onDraft={setDraft} onSend={() => void handleSend(draft)}
       onMicrophone={() => { if (voice.phase === 'requesting') interrupt(); else if (voice.phase === 'recording') voice.stop(); else if (pending || output.busy || readingParts) interrupt(); else startVoice(); }}
       onInterrupt={() => interrupt()} onSound={() => { interrupt(''); soundRef.current = !voiceSound; setVoiceSound(!voiceSound); }}

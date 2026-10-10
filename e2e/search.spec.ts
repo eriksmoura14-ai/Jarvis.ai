@@ -66,3 +66,35 @@ test('comando falado pesquisa e sintetiza só a resposta; fontes ficam acessíve
   const spoken = await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken);
   expect(spoken).toEqual(['React usa componentes reutilizáveis.']);
 });
+
+test('uma pesquisa falha no modo voz não apresenta nem reproduz a resposta anterior', async ({ page }) => {
+  await page.addInitScript(response => localStorage.setItem('jarvis.history.v1', JSON.stringify([
+    { id: 'old-user', role: 'user', content: 'pesquise React', createdAt: response.createdAt },
+    { ...response, role: 'assistant', content: response.message },
+  ])), response);
+  await page.route('**/api/chat', route => route.fulfill({ status: 503, json: { error: 'Não encontrei notícias relacionadas ao assunto com data nos últimos sete dias.' } }));
+  await prepare(page);
+  await expect(page.locator('.scene-reply')).toContainText('componentes reutilizáveis');
+  await page.getByRole('button', { name: 'Digitar mensagem' }).click();
+  await page.getByRole('textbox').fill('Últimas notícias tecnologia e ia');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect(page.getByRole('alert')).toContainText('notícias relacionadas');
+  await expect(page.getByRole('textbox')).toHaveValue('Últimas notícias tecnologia e ia');
+  await expect(page.locator('.scene-reply')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+  await page.getByRole('button', { name: 'Abrir histórico' }).click();
+  await expect(page.getByRole('dialog')).toContainText('componentes reutilizáveis');
+});
+
+test('fontes mostram a data de publicação informada pelo feed', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
+  await page.route('**/api/chat', route => route.fulfill({ json: { ...response, sources: [{ ...response.sources[0], publishedAt: '2026-10-09T12:00:00Z' }] } }));
+  await page.goto('/');
+  await page.getByRole('textbox').fill('pesquise React');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect(page.getByRole('region', { name: 'Fontes da pesquisa' }).locator('time[datetime="2026-10-09T12:00:00Z"]')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toContainText('Publicado em');
+});

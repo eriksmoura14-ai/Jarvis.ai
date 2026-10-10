@@ -3,7 +3,7 @@ export const MAX_CONTEXT_MESSAGES = 10;
 export const MAX_CONTEXT_CHARACTERS = 8000;
 export type ProviderName = 'local' | 'groq' | 'ollama';
 export interface ConversationTurn { role: 'user' | 'assistant'; content: string }
-export interface SearchSource { title: string; url: string; snippet: string }
+export interface SearchSource { title: string; url: string; snippet: string; publishedAt?: string }
 export interface WebSearchInfo { query: string; engine: 'duckduckgo' | 'bing'; searchedAt: string }
 export interface ChatRequest {
   message: string;

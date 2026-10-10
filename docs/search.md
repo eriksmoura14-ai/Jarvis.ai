@@ -1,6 +1,6 @@
 # Pesquisa na web para uso pessoal
 
-O backend consulta resultados públicos sem uma chave de busca adicional. Usa o HTML público do DuckDuckGo e, se ele não responder, o RSS público do Bing. Não há cadastro, cartão nem assinatura de busca no projeto. Essas interfaces não são APIs com disponibilidade garantida: podem mudar, limitar consultas ou exibir desafios. O JARVIS não tenta contornar desafios nem redirecionamentos; mostra um erro se não conseguir resultados reais.
+O backend consulta resultados públicos sem uma chave de busca adicional. Nas buscas comuns usa o HTML público do DuckDuckGo e, se ele não responder ou retornar resultados fora do assunto, o RSS público do Bing. Pedidos de notícias usam primeiro o RSS do Bing Notícias; o fallback DuckDuckGo solicita a última semana. Não há cadastro, cartão nem assinatura de busca no projeto. Essas interfaces não são APIs com disponibilidade garantida: podem mudar, limitar consultas ou exibir desafios. O JARVIS não tenta contornar desafios nem redirecionamentos; mostra um erro se não conseguir resultados reais.
 
 ## Como usar
 
@@ -13,13 +13,19 @@ O backend atualizado informa `webSearch: { enabled: true }` em `/api/health`. Is
 
 O servidor devolve até cinco fontes, com título, endereço e trecho do resultado. Não baixa nem lê a página completa. Se a IA estiver configurada, recebe os trechos para criar um resumo com referências `[1]`, `[2]` etc. Os links são selecionados pelo backend a partir da busca, nunca gerados pelo modelo. Sem IA ou se o resumo falhar, os resultados reais continuam disponíveis. Se a busca falhar, não há resumo nem fontes inventadas.
 
+Antes de chamar a IA, um filtro compara os termos do assunto com os títulos e trechos. Ignora palavras comuns e reconhece equivalências de tecnologia e inteligência artificial em português/inglês, incluindo `IA` como palavra inteira. `Bahrain` não corresponde a `IA`. Isso é um filtro de palavras, não uma avaliação semântica completa: pode rejeitar fontes pertinentes com vocabulário diferente ou aceitar coincidências. Fontes descartadas não ocupam os cinco lugares nem entram no resumo.
+
+Pedidos com `notícias`, `news` ou `manchetes` buscam notícias datadas nos últimos sete dias. O backend expande `IA` para `inteligência artificial` na consulta ao buscador e remove a introdução “últimas notícias”, preservando o assunto original na resposta. Exclui notícias sem data reconhecida, antigas ou futuras; pode não encontrar notícias mesmo que existam. A interface mostra **Publicado em** com a data informada pelo feed, separada da data da consulta. Links de rastreamento do Bing Notícias são convertidos em URLs públicas diretas, sem visitar o destino. A data do feed não é verificada na página do artigo.
+
+No modo voz, uma pesquisa em andamento ou com erro não exibe a resposta/fontes anteriores como se fossem do pedido atual. O histórico permanece disponível e o pedido com falha retorna à digitação. Texto parcial de uma resposta com erro é descartado e não é falado.
+
 ## Privacidade e limites
 
-A pesquisa envia apenas o assunto ao buscador. O resumo envia os trechos dos resultados e o contexto recente à Groq/Ollama. A chave Groq fica somente no backend e não acompanha consultas ao buscador. O histórico, inclusive fontes, fica no navegador; o backend não persiste consultas. Não coloque senhas nem informações privadas no assunto de uma pesquisa.
+A pesquisa envia apenas o assunto ao buscador. O resumo envia os trechos dos resultados e o contexto recente à Groq/Ollama; no modo pessoal inclui as memórias explicitamente salvas. A chave Groq fica somente no backend e não acompanha consultas ao buscador. Sem modo pessoal, o histórico fica no navegador. Com senha e modo pessoal, os pedidos e respostas confirmados, inclusive fontes, ficam no backend da conta e sincronizam entre aparelhos. Não coloque senhas nem informações privadas no assunto de uma pesquisa.
 
 São no máximo 300 caracteres por assunto, cinco resultados, duas pesquisas simultâneas e seis tentativas por minuto no servidor inteiro. Tentativas que falham também contam no limite por minuto. Cada buscador tem até 4,5 segundos; o resumo mantém o limite de 15 segundos e o orçamento diário de IA existente. O navegador aguarda até 30 segundos. Interromper a conversa cancela também a busca/resumo. Resumos pedem até quatro frases curtas. Nos modelos GPT-OSS 20B/120B da Groq, a chamada usa esforço de raciocínio baixo e até 1.024 tokens de conclusão, incluindo raciocínio; os demais mantêm 700. Uma resposta encerrada pelo limite recebe um aviso explícito.
 
-Títulos e trechos são dados externos não confiáveis. O prompt manda ignorar instruções presentes neles, sem executar código ou ferramentas. A IA ainda pode errar; citar um link não prova a afirmação. A data mostrada é a da consulta, não a publicação do artigo. Não há garantia de resultados exaustivos, atualizados ou relevantes, nem de preços, notícias ou outros dados em tempo real.
+Títulos e trechos são dados externos não confiáveis. O prompt manda ignorar instruções presentes neles, sem executar código ou ferramentas. A IA ainda pode errar; citar um link não prova a afirmação. A data da consulta não é a publicação do artigo; quando disponível, a data de publicação aparece separadamente. Não há garantia de resultados exaustivos, corretos ou relevantes, nem de preços, notícias ou outros dados em tempo real.
 
 ## Executar sem publicar
 
@@ -31,11 +37,11 @@ npm start
 
 Não é necessário publicar no GitHub Pages para usar o projeto. O modo servidor entrega a interface e a API juntos. O navegador do celular precisa alcançar o servidor, e voz normalmente exige HTTPS. A instalação local não usa automaticamente a chave guardada no Render: para resumo local, configure seu `.env` ignorado ou execute sem IA, com a lista de resultados.
 
-Para acessar tanto no computador quanto no celular, abra o mesmo endereço HTTPS do serviço Render nos dois navegadores. Isso não exige instalar o projeto em cada dispositivo. O histórico e as notas continuam separados por navegador; esta versão não sincroniza dados entre os aparelhos.
+Para acessar tanto no computador quanto no celular, abra o mesmo endereço HTTPS do serviço Render nos dois navegadores. Isso não exige instalar o projeto em cada dispositivo. Com o modo pessoal configurado, histórico, notas e memórias sincronizam pela conta. Preferências de voz/interface continuam locais. Veja [configuração pessoal](personal.md).
 
 A publicação no GitHub Pages agora é manual pelo workflow **Publish GitHub Pages → Run workflow**. Enviar alterações para `main` mantém a validação de CI e pode acionar o deploy do serviço Render configurado nessa branch, sem iniciar uma nova publicação automática no Pages.
 
-Uso pessoal é diferente de acesso privado: o endereço atual do Render pode ser acessado por outras pessoas enquanto não houver autenticação/rede privada. A pesquisa não adiciona login nem torna esse endereço privado. O UUID da sessão e o CORS não substituem senha. Para restringir acesso, configure proteção antes de guardar dados sensíveis.
+Uso pessoal é diferente de acesso privado: configure `JARVIS_PASSWORD` no backend para proteger as APIs e os dados da conta. A pesquisa usa a autenticação existente; não adiciona uma segunda conta. O UUID da sessão e o CORS não substituem senha.
 
 ## Validação
 

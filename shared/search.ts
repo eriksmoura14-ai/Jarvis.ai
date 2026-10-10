@@ -26,7 +26,8 @@ export function publicSourceURL(value: unknown): string | undefined {
 export function validSources(value: unknown): value is SearchSource[] {
   return Array.isArray(value) && value.length <= MAX_SEARCH_SOURCES && value.every(source => source && typeof source === 'object'
     && typeof source.title === 'string' && source.title.trim() && source.title.length <= 200
-    && typeof source.snippet === 'string' && source.snippet.length <= 700 && publicSourceURL(source.url));
+    && typeof source.snippet === 'string' && source.snippet.length <= 700 && publicSourceURL(source.url)
+    && (source.publishedAt === undefined || (typeof source.publishedAt === 'string' && source.publishedAt.length <= 64 && Number.isFinite(Date.parse(source.publishedAt)))));
 }
 
 export function validSearchInfo(value: unknown): value is WebSearchInfo {
