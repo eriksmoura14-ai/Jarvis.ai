@@ -8,6 +8,10 @@ export async function memoryCommand(request: ChatRequest, store: PersonalStore):
   const normalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[?!.,]+$/g, '');
   const reply = (message: string, generation: number, command: ChatResponse['command'] = 'memory'): PersonalCommand => ({ response: { message, command, provider: 'local' }, generation });
   const memory = input.match(/^(?:lembre(?:-se)?(?: que)?|lembrar(?: que)?|memorize)\s+(.+)$/is);
+  if (normalized === 'apagar notas') {
+    const { count, generation } = await store.clearWithReceipt();
+    return reply(`${count} nota${count === 1 ? '' : 's'} excluída${count === 1 ? '' : 's'}.`, generation, 'note-clear');
+  }
   if (memory || memorySlot(input)) {
     const content = memory ? memory[1].trim() : input;
     if (content.length > 500) return reply('Use uma memória com até 500 caracteres.', (await store.snapshot()).generation);

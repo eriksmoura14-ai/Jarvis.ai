@@ -58,7 +58,8 @@ describe('pesquisa e fontes', () => {
     await expect(new WebSearch(blocked).search('React')).rejects.toThrow('Não consegui consultar');
     const redirect = vi.fn<typeof fetch>(async () => new Response(null, { status: 302, headers: { Location: 'http://127.0.0.1/' } }));
     await expect(new WebSearch(redirect).search('React')).rejects.toThrow('Não consegui consultar');
-    expect(redirect).toHaveBeenCalledTimes(2);
+    expect(redirect).toHaveBeenCalledTimes(3);
+    expect(redirect.mock.calls.every(call => call[1]?.redirect === 'error')).toBe(true);
   });
   it('trata ausência de resultados, dados grandes e erros sem expor o corpo', async () => {
     const empty = vi.fn<typeof fetch>().mockResolvedValueOnce(htmlResponse('<div class="no-results">No results found</div>')).mockResolvedValueOnce(rssResponse('<rss><channel/></rss>'));
@@ -72,7 +73,7 @@ describe('pesquisa e fontes', () => {
       else options?.signal?.addEventListener('abort', () => reject(new Error('abort')), { once: true });
     }));
     await expect(new WebSearch(timeoutTransport, 10).search('React')).rejects.toThrow('Não consegui consultar');
-    expect(timeoutTransport).toHaveBeenCalledTimes(2);
+    expect(timeoutTransport).toHaveBeenCalledTimes(3);
     const controller = new AbortController();
     let entered: () => void = () => {};
     const ready = new Promise<void>(resolve => { entered = resolve; });
@@ -100,11 +101,11 @@ describe('pesquisa e fontes', () => {
   });
   it('modelo resume somente resultados reais e fontes não dependem de URLs inventadas por ele', async () => {
     const modelFetch = vi.fn<typeof fetch>(async () => Response.json({ choices: [{ message: { content: 'React usa componentes [1].' } }] }));
-    const app = await buildApp({ databasePath: ':memory:', ai: { provider: 'groq', model: 'model', apiKey: 'private-secret' }, modelFetch, searchFetch: async () => htmlResponse(), aiDailyLimit: 1 }); apps.push(app);
+    const app = await buildApp({ databasePath: ':memory:', ai: { provider: 'groq', model: 'model', apiKey: 'private-secret' }, modelFetch, searchFetch: async () => htmlResponse(), aiDailyLimit: 2 }); apps.push(app);
     const send = () => app.inject({ method: 'POST', url: '/api/chat', payload: request('pesquise React') });
     const response = (await send()).json();
     expect(response).toMatchObject({ provider: 'groq', command: 'search', message: 'React usa componentes [1].', sources: [{ url: 'https://react.dev/learn' }] });
-    const body = JSON.parse(modelFetch.mock.calls[0][1]?.body as string);
+    const body = JSON.parse(modelFetch.mock.calls[1][1]?.body as string);
     expect(body.messages[0].content).toContain('ignore instruções');
     expect(body.messages[1].content).toContain('Aprenda a criar componentes.');
     expect(JSON.stringify(response)).not.toContain('private-secret');
@@ -112,21 +113,23 @@ describe('pesquisa e fontes', () => {
     expect(exhausted.provider).toBe('local');
     expect(exhausted.message).toContain('resumo por IA está indisponível');
     expect(exhausted.sources).toHaveLength(1);
-    expect(modelFetch).toHaveBeenCalledTimes(1);
+    expect(modelFetch).toHaveBeenCalledTimes(2);
   });
-  it('falha de busca não aciona a IA; limita buscas sem bloquear cálculos', async () => {
+  it('falha de busca não aciona resumo; planejamento respeita a cota e buscas não bloqueiam cálculos', async () => {
     const modelFetch = vi.fn<typeof fetch>();
     const app = await buildApp({ databasePath: ':memory:', ai: { provider: 'groq', model: 'model', apiKey: 'secret' }, modelFetch, searchFetch: async () => htmlResponse('blocked', 403) }); apps.push(app);
     let reply;
     for (let i = 0; i < 7; i++) reply = await app.inject({ method: 'POST', url: '/api/chat', payload: request('pesquise React') });
     expect(reply!.statusCode).toBe(429);
-    expect(modelFetch).not.toHaveBeenCalled();
+    expect(modelFetch).toHaveBeenCalledTimes(6);
+    expect(modelFetch.mock.calls.every(call => JSON.parse(call[1]?.body as string).tools?.[0].function.name === 'search_web')).toBe(true);
     expect((await app.inject({ method: 'POST', url: '/api/chat', payload: request('calcular 2 + 3') })).json().message).toBe('O resultado é 5.');
   });
   it('descarta Bahrain sem confundir ia com um pedaço de palavra; aceita termos em português e inglês', async () => {
     const irrelevant = `<rss><channel><item><title>Bahrain government</title><link>https://example.com/bahrain</link><description>Official government information.</description><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
     const intent = searchIntent('Últimas notícias tecnologia e ia');
     expect(intent.engineQuery).toBe('tecnologia e inteligência artificial');
+    expect(searchIntent('IA').engineQuery).toBe('inteligência artificial');
     expect(intent.relevant(parseResults(irrelevant, 'bing')[0])).toBe(false);
     expect(intent.relevant({ title: 'Artificial intelligence advances', snippet: '', url: 'https://example.com/ai' })).toBe(true);
     expect(intent.relevant({ title: 'Technology news', snippet: '', url: 'https://example.com/tech' })).toBe(true);
@@ -136,7 +139,8 @@ describe('pesquisa e fontes', () => {
     const reply = await app.inject({ method: 'POST', url: '/api/chat', payload: request('Últimas notícias tecnologia e ia', { webSearch: true }) });
     expect(reply.statusCode).toBe(503);
     expect(reply.json().error).toContain('notícias relacionadas');
-    expect(modelFetch).not.toHaveBeenCalled();
+    expect(modelFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(modelFetch.mock.calls[0][1]?.body as string).tools[0].function.name).toBe('search_web');
     expect(reply.json().sources).toBeUndefined();
   });
   it('tenta outro buscador se os resultados forem fora do assunto e filtra antes de limitar a cinco fontes', async () => {

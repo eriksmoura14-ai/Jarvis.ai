@@ -1,4 +1,9 @@
 @import "tailwindcss";
+
+.search-auto-hint { font-size: .75rem; color: #8ca1b6; text-align: center; margin: .6rem 0; overflow-wrap: anywhere; }
+.search-queries { font-size: .8rem; color: #94a8bd; overflow-wrap: anywhere; }
+.search-queries summary { min-height: 44px; cursor: pointer; padding: .75rem 0; }
+.search-queries ul { padding-left: 1.25rem; }
 @import "./voice.css";
 
 @theme {

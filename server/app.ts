@@ -19,6 +19,7 @@ import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type Do
 import { memoryCommand } from './personal/commands.js';
 import { SpeechError, SpeechProvider, type SpeechConfig } from './speech.js';
 import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
+import { selectedNotes } from './interpretation.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -76,6 +77,7 @@ export async function buildApp(options: AppOptions = {}) {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', streaming: true, webSearch: { enabled: true },
+      ...(provider instanceof HybridProvider ? { interpretation: { enabled: true } } : {}),
       ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
@@ -170,14 +172,18 @@ export async function buildApp(options: AppOptions = {}) {
     const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on('close', disconnected);
     const started = performance.now();
+    const deadline = setTimeout(() => controller.abort(), 42_000);
+    reply.raw.once('finish', () => clearTimeout(deadline));
+    reply.raw.once('close', () => clearTimeout(deadline));
     let firstTextMs: number | undefined;
     const respond = async (emit?: (event: ChatStreamEvent) => void) => {
       controller.signal.throwIfAborted();
-      const command = personal && !request.body.webSearch ? await memoryCommand(request.body, personal) : undefined;
+      const command = personal ? await memoryCommand(request.body, personal) : undefined;
       const record = personal ? await personal.snapshotRecord() : undefined;
       controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
-      const body = record ? { ...request.body, sessionId: 'owner', context: record.context, personalMemory: record.snapshot.memories.map(memory => memory.content) } : request.body;
+      const body = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
+        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, request.body.message) } : request.body;
       const prepared = performance.now();
       let lastEmit = -Infinity;
       const progress = emit ? (text: string) => {

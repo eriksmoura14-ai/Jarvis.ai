@@ -88,12 +88,17 @@ export class PersonalStore implements NoteRepository {
   async revision() { return this.backend.revision ? this.backend.revision() : (await this.backend.read()).version; }
   async snapshotRecord() {
     const { value, version } = await this.backend.read();
-    return { version, context: conversationContext(value.contextHistory ?? value.history), snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name } };
+    const activeHistory = value.contextHistory ?? value.history;
+    const lastSearch = [...activeHistory].reverse().find(message => message.role === 'assistant' && message.webSearch);
+    const searchContext = lastSearch?.webSearch;
+    const publicSearchTerms = (lastSearch?.sources ?? []).map(source => source.title + ' ' + source.snippet).join(' ').slice(0, 4500);
+    return { version, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name } };
   }
   async snapshot(): Promise<PersonalSnapshot> { return (await this.snapshotRecord()).snapshot; }
   async add(_session: string, content: string) { return this.change(value => { if (value.notes.length >= 100) return false; value.notes.push({ content }); return true; }); }
   async list(_session: string) { return (await this.snapshot()).notes; }
-  async clear(_session: string) { return this.change(value => { const count = value.notes.length; value.notes = []; return count; }); }
+  async clearWithReceipt() { return this.change(value => { const count = value.notes.length; value.notes = []; this.resetContext(value); return { count, generation: value.generation }; }); }
+  async clear(_session: string) { return (await this.clearWithReceipt()).count; }
   async remember(content: string) {
     content = this.memoryContent(content);
     return this.change(value => {
@@ -162,7 +167,7 @@ export class PersonalStore implements NoteRepository {
       if (generation !== value.generation) return false;
       // Keep the model's context separate so visible old conversations cannot undo forgetting.
       value.contextHistory = [...(value.contextHistory ?? value.history), ...messages].slice(-MAX_CONTEXT_MESSAGES)
-        .map(({ id, role, content, createdAt }) => ({ id, role, content: content.slice(0, MAX_MESSAGE_LENGTH), createdAt }));
+        .map(({ id, role, content, createdAt, webSearch, sources }) => ({ id, role, content: content.slice(0, MAX_MESSAGE_LENGTH), createdAt, ...(webSearch ? { webSearch, sources } : {}) }));
       value.history = boundedHistory([...value.history, ...messages]);
       return true;
     });

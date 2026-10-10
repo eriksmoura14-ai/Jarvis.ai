@@ -30,7 +30,7 @@ describe('conexões de modelo', () => {
     const body = JSON.parse(options?.body as string);
     expect(body.messages.slice(1)).toEqual([...request.context, { role: 'user', content: request.message }]);
     expect(body.messages[0]).toMatchObject({ role: 'system' });
-    expect(body.messages[0].content).toContain('não executa ferramentas');
+    expect(body.messages[0].content).toContain('Não diga que apagou notas');
     expect(JSON.stringify(response)).not.toContain('test-secret');
   });
   it.each([401, 403, 404, 429, 500])('trata HTTP %s sem repassar segredos do provedor', async status => {

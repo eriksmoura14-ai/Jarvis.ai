@@ -62,6 +62,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
   const [modelOffline, setModelOffline] = useState(false);
   const [cloudSpeech, setCloudSpeech] = useState(false);
   const [searchEnabled, setSearchEnabled] = useState(false);
+  const [searchAutomatic, setSearchAutomatic] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
   const [autoVoice, setAutoVoice] = useState(loadVoicePreference);
@@ -127,8 +128,8 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
       const current = request;
       timeout = setTimeout(() => current.abort(), 5000);
       const started = performance.now();
-      try { const result = await checkHealth(current.signal); if (mounted && request === current) { setConnectionMs(Math.round(performance.now() - started)); setStreaming(result.streaming === true); setHealth('online'); setModel(result.ai); setModelOffline(false); setSearchEnabled(result.webSearch?.enabled === true); setCloudSpeech(!BROWSER_MODE && result.speech?.configured === true); } }
-      catch { if (mounted && request === current) { setHealth(BROWSER_MODE ? 'online' : 'offline'); setModel(undefined); setModelOffline(true); setSearchEnabled(false); setCloudSpeech(false); setStreaming(false); } }
+      try { const result = await checkHealth(current.signal); if (mounted && request === current) { setConnectionMs(Math.round(performance.now() - started)); setStreaming(result.streaming === true); setHealth('online'); setModel(result.ai); setModelOffline(false); setSearchEnabled(result.webSearch?.enabled === true); setSearchAutomatic(result.interpretation?.enabled === true); setCloudSpeech(!BROWSER_MODE && result.speech?.configured === true); } }
+      catch { if (mounted && request === current) { setHealth(BROWSER_MODE ? 'online' : 'offline'); setModel(undefined); setModelOffline(true); setSearchEnabled(false); setSearchAutomatic(false); setCloudSpeech(false); setStreaming(false); } }
       finally { clearTimeout(timeout); }
     };
     void verify();
@@ -350,7 +351,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
       continuous={continuous} status={stateLabel}
       connection={health === 'online' ? BROWSER_MODE ? 'Modo navegador' : 'Sistema online' : health === 'checking' ? 'Conectando' : 'Sem conexão'}
       modelStatus={modelStatus}
-      searchEnabled={searchEnabled} webSearch={webSearch} onWebSearch={setWebSearch}
+      searchEnabled={searchEnabled} searchAutomatic={searchAutomatic} webSearch={webSearch} onWebSearch={setWebSearch}
       sources={visibleResponse?.sources} searchInfo={visibleResponse?.webSearch}
       error={error || voice.error || output.error} notice={interruptError || notice || output.notice} transcript={voice.interim || spokenText}
       reply={partial || visibleResponse?.content || ''} reception={receptionPanel} draft={draft} storageError={storageError} textareaRef={textarea}
@@ -414,7 +415,7 @@ export default function App({ personal, onLock }: { personal?: PersonalSnapshot;
                 <button data-gamepad type="button" className={`mic-button ${voice.phase === 'recording' ? 'recording' : ''}`} aria-label={voice.phase === 'recording' ? 'Parar gravação' : voice.phase === 'requesting' ? 'Cancelar solicitação do microfone' : 'Ativar microfone'} aria-pressed={voice.phase === 'recording'} disabled={!voice.canRecord || pending} title={!voice.canRecord ? 'Microfone indisponível. Use HTTPS e um navegador compatível ou digite.' : 'Ativar microfone; o navegador pode usar um serviço de reconhecimento de voz.'} onClick={() => { if (voice.phase === 'idle') interrupt(''); else output.stop(); if (voice.phase === 'requesting') voice.cancelRequest(); else if (voice.phase === 'recording') voice.stop(); else void voice.start(); }}>{voice.phase !== 'idle' ? <Square size={18} /> : <Mic size={20} />}</button>
                 <button data-gamepad className="send-button" type="submit" aria-label="Enviar mensagem" disabled={!draft.trim() || pending || voice.phase !== 'idle'}><Send size={18} /></button>
               </form>
-              <SearchToggle enabled={searchEnabled} checked={webSearch} disabled={pending || voice.phase !== 'idle'} onChange={setWebSearch} />
+              <SearchToggle enabled={searchEnabled} automatic={searchAutomatic} checked={webSearch} disabled={pending || voice.phase !== 'idle'} onChange={setWebSearch} />
               <div className="composer-footer"><span><ShieldCheck size={12} /> Histórico salvo neste navegador</span><span className="keyboard-hint"><kbd>Enter</kbd> enviar <span>·</span> <kbd>Shift + Enter</kbd> nova linha</span><span className="char-count" aria-live="off">{draft.length > 1800 ? `${draft.length}/${MAX_MESSAGE_LENGTH}` : ''}</span></div>
               {!voice.canRecognize && <p className="support-note">Reconhecimento de voz indisponível neste navegador. {voice.canRecord ? 'Você pode gravar e ouvir o áudio; envie seu pedido por texto.' : 'Continue pela digitação.'}</p>}
             </div>

@@ -44,5 +44,8 @@ export function validSearchInfo(value: unknown): value is WebSearchInfo {
   if (!value || typeof value !== 'object') return false;
   const info = value as Partial<WebSearchInfo>;
   return typeof info.query === 'string' && !!info.query.trim() && info.query.length <= MAX_SEARCH_QUERY
-    && ['duckduckgo', 'bing'].includes(info.engine ?? '') && typeof info.searchedAt === 'string' && Number.isFinite(Date.parse(info.searchedAt));
+    && ['duckduckgo', 'bing'].includes(info.engine ?? '') && typeof info.searchedAt === 'string' && Number.isFinite(Date.parse(info.searchedAt))
+    && (info.news === undefined || typeof info.news === 'boolean')
+    && (info.queries === undefined || (Array.isArray(info.queries) && info.queries.length <= 3 && info.queries.every(query => typeof query === 'string' && !!query.trim() && query.length <= MAX_SEARCH_QUERY)))
+    && (info.engines === undefined || (Array.isArray(info.engines) && info.engines.length <= 2 && info.engines.every(engine => ['duckduckgo', 'bing'].includes(engine))));
 }

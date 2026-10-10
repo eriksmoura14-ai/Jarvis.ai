@@ -8,9 +8,11 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Ritmo da conversa e recepção:** [resposta progressiva, voz em partes, tempos reais, “Jarvis, pare” e notícias opcionais ao abrir](docs/conversation.md). Não exige novas chaves, variáveis ou tabelas; usa as integrações já configuradas. Notícias e interrupção por voz são ativadas em Preferências, por aparelho.
 
+**Interpretação de pedidos:** [conversa, consulta às notas pessoais e pesquisa automática com consultas complementares](docs/interpretation.md). Com IA compatível, perguntas livres podem solicitar até três buscas, incluindo continuação do último assunto público. Comandos de notas e perguntas pessoais reconhecidas têm prioridade mesmo com a opção web marcada.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
-**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; o modelo não executa ações.
+**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; a ferramenta oferecida ao modelo consulta somente informações públicas.
 
 ## Começar
 
@@ -148,7 +150,8 @@ server/
     local.ts              Motor local de comandos
     model.ts              Chamadas Groq/Ollama e configuração segura
     hybrid.ts             Prioridade local e limites de IA
-    research.ts           Pesquisa explícita e resumo com fontes
+    research.ts           Pesquisa explícita/automática e resumo com fontes
+  interpretation.ts       Intenção, ferramenta de busca e seleção de notas
   search.ts               DuckDuckGo HTML / Bing RSS, limites e extração
   personal/               Login, sessões, comandos de memória e SQLite/Supabase
 shared/contracts.ts       Tipos de mensagem e contratos HTTP
@@ -162,7 +165,7 @@ e2e-personal/             Login, memória e sincronização em navegador
 
 Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando o comando usa notas → resposta em texto. `GET /api/health` verifica a API. No modo Pages: React → adaptador `src/lib/browser.ts` → o mesmo provedor em `shared/local.ts` → `localStorage`, sem requisições à API. A calculadora comum fica em `shared/calculator.ts`. O horário usa o fuso IANA informado pelo navegador, validado no backend quando há API.
 
-`buildApp({ ai })` compõe o motor local com `ModelProvider`; `buildApp({ provider })` permite injetar outro provedor. Pedidos reconhecidos são locais. Pedidos desconhecidos usam o modelo somente quando configurado. Não há SDK de IA no frontend: as chamadas HTTP e a chave Groq ficam no backend. No Pages, comandos conhecidos continuam no navegador; perguntas livres e pesquisas explícitas seguem para o backend configurado. `ResearchProvider` detecta pesquisas antes dos comandos locais, consulta um destino fixo de busca e envia apenas os trechos ao modelo para resumo. As URLs das fontes não são destinos de fetch no servidor. Sem modelo, retorna a lista de resultados.
+`buildApp({ ai })` compõe o motor local com `ModelProvider`; `buildApp({ provider })` permite injetar outro provedor. Pedidos reconhecidos são locais. Pedidos desconhecidos usam o modelo somente quando configurado. Não há SDK de IA no frontend: as chamadas HTTP e a chave Groq ficam no backend. No Pages, comandos conhecidos continuam no navegador; perguntas livres e pesquisas explícitas seguem para o backend configurado. `ResearchProvider` prioriza pedidos pessoais, detecta pesquisas explícitas ou aceita uma solicitação estruturada do modelo. Consulta buscadores fixos e envia os trechos ao modelo para resumo. As URLs das fontes não são destinos de fetch no servidor. Sem modelo, retorna a lista de resultados.
 
 ### Dados e privacidade
 
@@ -227,7 +230,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 
 1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
 2. Ativar e validar o modo pessoal com Supabase no seu serviço; acrescentar backup/exportação e exclusão individual de notas.
-3. Acrescentar execução de ferramentas por solicitações estruturadas do modelo, com validação e confirmação para ações que excluam dados; atualmente só comandos explícitos executam funções.
+3. Ampliar as ferramentas além da pesquisa pública, com escopo definido e confirmação para ações que alterem dados; atualmente alterações dependem de comandos explícitos ou do painel.
 4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 

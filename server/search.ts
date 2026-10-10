@@ -69,17 +69,20 @@ async function boundedText(response: Response): Promise<string> {
 
 export class WebSearch {
   constructor(private transport: typeof fetch = fetch, private timeoutMs = 4500) {}
-  async search(query: string, signal?: AbortSignal): Promise<SearchResults> {
+  async search(query: string, signal?: AbortSignal, options: { news?: boolean } = {}): Promise<SearchResults> {
     query = query.trim();
     if (!query || query.length > MAX_SEARCH_QUERY) throw new SearchError('Use uma pesquisa com até 300 caracteres.', 400);
     const intent = searchIntent(query);
+    const news = options.news ?? intent.news;
     let empty = false;
-    for (const engine of intent.news ? ['bing', 'duckduckgo'] as const : ['duckduckgo', 'bing'] as const) {
+    const attempts = news ? [{ engine: 'bing' as const, newsFeed: true }, { engine: 'duckduckgo' as const, newsFeed: false }]
+      : [{ engine: 'duckduckgo' as const, newsFeed: false }, { engine: 'bing' as const, newsFeed: false }, { engine: 'bing' as const, newsFeed: true }];
+    for (const { engine, newsFeed } of attempts) {
       signal?.throwIfAborted();
-      const url = new URL(engine === 'duckduckgo' ? 'https://html.duckduckgo.com/html/' : intent.news ? 'https://www.bing.com/news/search' : 'https://www.bing.com/search');
+      const url = new URL(engine === 'duckduckgo' ? 'https://html.duckduckgo.com/html/' : newsFeed ? 'https://www.bing.com/news/search' : 'https://www.bing.com/search');
       url.searchParams.set('q', intent.engineQuery);
       if (engine === 'bing') { url.searchParams.set('format', 'rss'); url.searchParams.set('setlang', 'pt-br'); url.searchParams.set('cc', 'br'); }
-      else { url.searchParams.set('kl', 'br-pt'); if (intent.news) url.searchParams.set('df', 'w'); }
+      else { url.searchParams.set('kl', 'br-pt'); if (news) url.searchParams.set('df', 'w'); }
       const controller = new AbortController();
       const cancel = () => controller.abort();
       signal?.addEventListener('abort', cancel, { once: true });
@@ -96,14 +99,14 @@ export class WebSearch {
         const type = response.headers.get('content-type') ?? '';
         if (engine === 'bing' && (!/xml/i.test(type) || !/<rss[\s>]/i.test(body))) continue;
         if (engine === 'duckduckgo' && (!/html/i.test(type) || /anomaly\.js|anomaly-modal|challenge-form/i.test(body))) continue;
-        const sources = parseResults(body, engine, { query, recent: intent.news });
-        if (sources.length) return { sources, info: { query, engine, searchedAt: new Date().toISOString() } };
+        const sources = parseResults(body, engine, { query, recent: news });
+        if (sources.length) return { sources, info: { query, engine, searchedAt: new Date().toISOString(), news } };
         if (engine === 'bing' || /no-results|No results found/i.test(body) || parseResults(body, engine).length) empty = true;
       } catch {
         if (signal?.aborted) signal.throwIfAborted();
       } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     }
-    throw new SearchError(empty ? intent.news ? 'Não encontrei notícias relacionadas ao assunto com data nos últimos sete dias. Tente um tema mais específico.' : 'Não encontrei resultados relacionados a essa pesquisa. Tente palavras mais específicas.'
+    throw new SearchError(empty ? news ? 'Não encontrei notícias relacionadas ao assunto com data nos últimos sete dias. Tente um tema mais específico.' : 'Não encontrei resultados relacionados a essa pesquisa. Tente palavras mais específicas.'
       : 'Não consegui consultar a web agora. O buscador pode estar bloqueando a consulta; tente novamente mais tarde.');
   }
 }

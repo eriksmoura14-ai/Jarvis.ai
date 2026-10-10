@@ -98,3 +98,23 @@ test('fontes mostram a data de publicação informada pelo feed', async ({ page 
   await page.reload();
   await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toContainText('Publicado em');
 });
+
+test('pesquisa automática mostra consultas complementares e restaura os detalhes sem exigir a opção web', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
+  await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok', provider: 'groq', model: 'fixture-model', webSearch: { enabled: true }, interpretation: { enabled: true } } }));
+  let request: { webSearch?: boolean; message: string } | undefined;
+  await page.route('**/api/chat', route => { request = route.request().postDataJSON(); return route.fulfill({ json: { ...response, webSearch: { ...response.webSearch, queries: ['React', 'TypeScript'], engines: ['bing', 'duckduckgo'] } } }); });
+  await page.goto('/');
+  await expect(page.getByText(/Pesquisa automática ativa/)).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).not.toBeChecked();
+  await page.getByRole('textbox').fill('Compare as novidades de React e TypeScript');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  expect(request?.webSearch).not.toBe(true);
+  const details = page.locator('details.search-queries');
+  await expect(details.getByText('Consultas realizadas (2)')).toBeVisible();
+  await details.locator('summary').click();
+  await expect(details.locator('li')).toHaveText(['React', 'TypeScript']);
+  await page.reload();
+  await expect(details).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

@@ -4,7 +4,7 @@ export const MAX_CONTEXT_CHARACTERS = 8000;
 export type ProviderName = 'local' | 'groq' | 'ollama';
 export interface ConversationTurn { role: 'user' | 'assistant'; content: string }
 export interface SearchSource { title: string; url: string; snippet: string; publishedAt?: string }
-export interface WebSearchInfo { query: string; engine: 'duckduckgo' | 'bing'; searchedAt: string }
+export interface WebSearchInfo { query: string; engine: 'duckduckgo' | 'bing'; searchedAt: string; queries?: string[]; engines?: ('duckduckgo' | 'bing')[]; news?: boolean }
 export interface ChatRequest {
   message: string;
   sessionId: string;
@@ -26,7 +26,7 @@ export interface ChatResponse {
 }
 export interface ChatTimings { preparationMs: number; answerMs: number; saveMs: number; totalMs: number; firstTextMs?: number }
 export type ChatStreamEvent = { type: 'ready' } | { type: 'text'; text: string } | { type: 'result'; response: ChatResponse } | { type: 'error'; error: string };
-export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; streaming?: true; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
+export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; streaming?: true; interpretation?: { enabled: true }; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
 export interface AssistantProvider {
   readonly name: ProviderName;
   respond(request: ChatRequest, signal?: AbortSignal, onText?: (text: string) => void): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;

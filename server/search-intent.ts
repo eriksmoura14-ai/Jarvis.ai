@@ -14,17 +14,20 @@ export function searchIntent(query: string) {
   query = searchQuery({ message: query, webSearch: true }) ?? query;
   const news = /\b(?:noticias?|news|headlines|manchetes)\b/.test(normalize(query));
   // Expand whole-word acronyms: "ia" must never match Bahrain or other substrings.
-  const engineQuery = news ? query
+  const subject = query.replace(/^\s*(?:sobre|a respeito de)\s+/i, '').replace(/\bia\b/gi, 'inteligência artificial');
+  const engineQuery = news ? subject
     .replace(/\b(?:[uú]ltimas?\s+|[uú]ltimos?\s+)?(?:not[ií]cias?|news|headlines|manchetes)\b/gi, '')
     .replace(/(?:[uú]ltimas?|[uú]ltimos?)\s+/gi, '')
     .replace(/^\s*(?:sobre|de|do|da)\s+/i, '')
-    .replace(/\bia\b/gi, 'inteligência artificial')
-    .replace(/\s+/g, ' ').trim() || query : query;
+    .replace(/\s+/g, ' ').trim() || subject : subject;
+  const keywords = engineQuery.split(/\s+/).filter(word => !ignored.has(normalize(word).replace(/[^\p{L}\p{N}]/gu, ''))).join(' ');
   const terms = [...new Set(concepts(engineQuery.replace(/\bsite:\S+/gi, '')).match(/[\p{L}\p{N}]+/gu) ?? [])]
     .filter(term => !ignored.has(term));
-  return { news, engineQuery, relevant: (source: SearchSource) => {
+  const anchor = engineQuery.match(/\b(?:na|no|em|do|da|de)\s+(.+)$/i)?.[1] ?? '';
+  const anchors = (concepts(anchor).match(/[\p{L}\p{N}]+/gu) ?? []).filter(term => !ignored.has(term));
+  return { news, engineQuery, keywords, relevant: (source: SearchSource) => {
     if (!terms.length) return true;
     const words = new Set(concepts(`${source.title} ${source.snippet}`).match(/[\p{L}\p{N}]+/gu) ?? []);
-    return terms.filter(term => words.has(term)).length >= Math.max(1, Math.ceil(terms.length / 2));
+    return (!anchors.length || anchors.some(term => words.has(term))) && terms.filter(term => words.has(term)).length >= Math.max(1, Math.ceil(terms.length / 2));
   } };
 }

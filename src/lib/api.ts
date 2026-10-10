@@ -22,7 +22,7 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal, progr
   const controller = new AbortController();
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  const timer = setTimeout(() => controller.abort(), 45_000);
   try {
     const response = await fetch(`${BROWSER_MODE ? loadBackend() : ''}/api/chat`, {
       method: 'POST', credentials: BROWSER_MODE ? 'omit' : 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', ...(!BROWSER_MODE ? { 'X-Jarvis-Client': '1' } : {}) }, body: JSON.stringify(body), signal: controller.signal,

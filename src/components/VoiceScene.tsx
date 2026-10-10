@@ -18,6 +18,7 @@ interface VoiceSceneProps {
   connection: string;
   modelStatus: string;
   searchEnabled: boolean;
+  searchAutomatic?: boolean;
   webSearch: boolean;
   sources?: SearchSource[];
   searchInfo?: WebSearchInfo;
@@ -92,7 +93,7 @@ export function VoiceScene(props: VoiceSceneProps) {
         <label htmlFor="message-input">Sua mensagem</label>
         <div className="scene-typing-row"><textarea data-gamepad id="message-input" ref={props.textareaRef} aria-label="Sua mensagem para JARVIS" placeholder="Digite um comando…" maxLength={MAX_MESSAGE_LENGTH} rows={2} value={props.draft} onChange={event => props.onDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); props.onSend(); } }} /><button data-gamepad type="submit" className="send-button" aria-label="Enviar mensagem" disabled={!props.draft.trim() || props.pending || props.phase !== 'idle'}><Send size={18} /></button></div>
       </form>}
-      <SearchToggle enabled={props.searchEnabled} checked={props.webSearch} disabled={active} onChange={props.onWebSearch} />
+      <SearchToggle enabled={props.searchEnabled} checked={props.webSearch} disabled={active} automatic={props.searchAutomatic} onChange={props.onWebSearch} />
       {props.storageError && <p className="scene-error" role="alert">O histórico pode não ser salvo: o armazenamento está bloqueado ou sem espaço.</p>}
     </section>
 
