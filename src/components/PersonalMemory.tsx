@@ -22,6 +22,7 @@ export function PersonalMemory({ snapshot, onRefresh, onLogout }: { snapshot: Pe
     {!snapshot.memories.length && <p>Nenhuma memória salva. Você também pode dizer “lembre que prefiro respostas curtas”.</p>}
     {snapshot.memories.length > 0 && <button data-gamepad className="secondary-button" disabled={busy} onClick={() => setConfirm(!confirm)}>Apagar todas as memórias</button>}
     {confirm && <div className="dialog-actions"><span>Apagar todas as preferências salvas?</span><button data-gamepad className="primary-button" disabled={busy} onClick={() => void act(async () => { await personalRequest('memories', 'DELETE'); setConfirm(false); })}>Confirmar exclusão</button></div>}
+    <details><summary data-gamepad>Minhas notas ({snapshot.notes.length})</summary><ul>{snapshot.notes.map((note, index) => <li key={index}><p>{index + 1}. {note.content}</p></li>)}</ul></details>
     <div className="settings-detail"><div><strong>Trazer meu histórico antigo</strong><p>Importa até 100 mensagens deste navegador e as notas da antiga sessão que ainda existirem no servidor. Só este clique envia os dados antigos para sua conta.</p>
       <button data-gamepad className="secondary-button" disabled={busy || imported} onClick={() => void act(async () => {
         await personalRequest('import', 'POST', { messages: loadHistory().filter(message => message.content.length <= 6000), legacySessionId: loadSession() });

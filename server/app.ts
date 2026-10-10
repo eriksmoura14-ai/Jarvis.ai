@@ -145,6 +145,8 @@ export async function buildApp(options: AppOptions = {}) {
       const command = personal && !request.body.webSearch ? await memoryCommand(body, personal) : undefined;
       const response: ChatResponse = { ...(command ?? await assistant.respond(body, controller.signal)), id: randomUUID(), createdAt: new Date().toISOString() };
       if (personal && snapshot) {
+        if (response.message.length > 6000) response.message = response.message.slice(0, 5800) + (response.command === 'note-list'
+          ? '\n\nLista limitada. Consulte as notas completas em Preferências → Memória pessoal.' : '\n\nTexto limitado a 6000 caracteres.');
         await personal.append([{ id: randomUUID(), role: 'user', content: request.body.message, createdAt: response.createdAt },
           { id: response.id, role: 'assistant', content: response.message, createdAt: response.createdAt, provider: response.provider,
             ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], snapshot.generation);

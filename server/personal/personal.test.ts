@@ -163,6 +163,23 @@ describe('Acesso e memória pessoal', () => {
       expect(await Promise.all([first, second])).toHaveLength(2);
     } finally { release(); db.close(); }
   });
+  it('limita respostas pessoais grandes e o tamanho total do histórico sem perder as notas', async () => {
+    const app = await setup(':memory:', { provider: { name: 'local', respond: async () => ({ command: 'note-list', provider: 'local', message: 'x'.repeat(200_000) }) } });
+    const { headers } = await login(app); const response = await chat(app, headers, 'notas');
+    expect(response.json().message.length).toBeLessThanOrEqual(6000);
+    expect(response.json().message).toContain('notas completas');
+    expect((await data(app, headers)).history[1].content.length).toBeLessThanOrEqual(6000);
+    const db = new NoteStore(':memory:');
+    try {
+      const store = new PersonalStore(new SQLiteDocument(db));
+      await store.add('owner', 'Nota preservada');
+      const messages = Array.from({ length: 100 }, (_, index) => ({ id: String(index), role: 'assistant' as const, content: '𠮷'.repeat(3000), createdAt: new Date().toISOString() }));
+      await store.append(messages, 0); const snapshot = await store.snapshot();
+      expect(snapshot.history.length).toBeGreaterThan(0); expect(snapshot.history.length).toBeLessThan(100);
+      expect(Buffer.byteLength(JSON.stringify(snapshot.history))).toBeLessThanOrEqual(1_000_000);
+      expect(snapshot.notes[0].content).toBe('Nota preservada');
+    } finally { db.close(); }
+  });
 });
 
 describe('Adaptador Supabase por HTTPS', () => {

@@ -11,6 +11,11 @@ interface Document {
   sessions: { hash: string; version: string; expires: number }[];
 }
 const empty = (): Document => ({ history: [], memories: [], notes: [], generation: 0, usage: { day: '', count: 0 }, sessions: [] });
+function boundedHistory(messages: Message[]): Message[] {
+  const history = messages.slice(-100).map(message => ({ ...message, content: message.content.slice(0, 6000) }));
+  while (history.length && Buffer.byteLength(JSON.stringify(history), 'utf8') > 1_000_000) history.shift();
+  return history;
+}
 export interface DocumentBackend {
   readonly name: 'sqlite' | 'supabase';
   read(key?: 'owner' | 'sessions'): Promise<{ value: Document; version: number }>;
@@ -40,7 +45,7 @@ export class SupabaseDocument implements DocumentBackend {
       if (!response.body) throw new Error('storage');
       const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
       try {
-        for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 2_000_000) throw new Error('storage'); chunks.push(value); }
+        for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 4_000_000) throw new Error('storage'); chunks.push(value); }
       } finally { await reader.cancel().catch(() => {}); }
       const data: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (!Array.isArray(data)) throw new Error('storage');
@@ -96,13 +101,13 @@ export class PersonalStore implements NoteRepository {
   async forget(id: string) { return this.change(value => { value.memories = value.memories.filter(memory => memory.id !== id); }); }
   async forgetAll() { return this.change(value => { value.memories = []; }); }
   async append(messages: Message[], generation: number) {
-    return this.change(value => { if (generation !== value.generation) return; value.history = [...value.history, ...messages].slice(-100); });
+    return this.change(value => { if (generation !== value.generation) return; value.history = boundedHistory([...value.history, ...messages]); });
   }
   async clearHistory() { return this.change(value => { value.history = []; value.generation++; }); }
   async import(messages: Message[], notes: { content: string }[]) {
     return this.change(value => {
       const known = new Set(value.history.map(message => message.id));
-      value.history = [...value.history, ...messages.filter(message => !known.has(message.id))].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(-100);
+      value.history = boundedHistory([...value.history, ...messages.filter(message => !known.has(message.id))].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)));
       value.notes = [...value.notes, ...notes.filter(note => !value.notes.some(existing => existing.content === note.content))].slice(-100);
     });
   }

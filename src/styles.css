@@ -240,4 +240,5 @@ kbd { font: inherit; }
 .personal-memory li { display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid #25344b; border-radius: 12px; }
 .personal-memory li p { overflow-wrap: anywhere; }
 .personal-memory button, .personal-login button { min-height: 44px; }
+.personal-memory summary { min-height: 44px; padding: 12px; cursor: pointer; }
 .personal-error { color: #fca5a5; }

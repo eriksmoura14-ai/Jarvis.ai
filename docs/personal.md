@@ -117,7 +117,7 @@ permitidas pelo CORS. Health e estado do acesso permanecem públicos, sem dados
 pessoais. O backend não usa Supabase Auth: a senha única é verificada no Fastify.
 
 `PersonalStore` mantém até 100 mensagens, 100 notas e 30 memórias de 500 caracteres.
-O limite diário de IA e as sessões também ficam no armazenamento durável. A
+O histórico também tem limite total de 1 MB; as mensagens mais antigas saem primeiro se ele for atingido. Respostas pessoais têm até 6.000 caracteres. Listas longas são limitadas no chat, e as notas completas aparecem no painel de memória. O limite diário de IA e as sessões também ficam no armazenamento durável. A
 implementação usa um documento JSON para o dono e outro para as sessões, com compare-and-swap por versão
 e até seis tentativas para não sobrescrever atualizações concorrentes. A sincronização usa ETag para não baixar novamente um histórico inalterado. Não é
 arquitetura para múltiplos usuários. Supabase é acessado exclusivamente no servidor
