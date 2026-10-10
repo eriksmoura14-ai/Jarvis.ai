@@ -4,9 +4,19 @@ export const MAX_SEARCH_QUERY = 300;
 export const MAX_SEARCH_SOURCES = 5;
 
 export function searchQuery(request: Pick<ChatRequest, 'message' | 'webSearch'>): string | undefined {
-  const text = request.message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
-  const command = text.match(/^(?:pesquis(?:e|ar|a)|bus(?:que|car|ca)|procur(?:e|ar|a))(?:\s+(?:na\s+(?:web|internet)|(?:na\s+)?rede))?\s*[:,-]?\s+([\s\S]+)$/i);
-  return command ? command[1].trim() : request.webSearch ? text : undefined;
+  const text = request.message.trim()
+    .replace(/^(?:oi|ol[aá]|bom dia|boa tarde|boa noite)[,.:!]?\s+(?=jarvis\b|pesquis|busc|busq|procur|(?:voc[eê]\s+)?(?:pode|consegue))/i, '')
+    .replace(/^jarvis[,.:!]?\s+/i, '')
+    .replace(/^por favor[,.:!]?\s+/i, '');
+  const command = text.match(/^(?:(?:voc[eê]\s+)?(?:pode(?:ria)?|consegue)\s+)?(?:pesquis(?:e|ar|a)|bus(?:que|car|ca)|procur(?:e|ar|a))(?:\s+(?:na\s+(?:web|internet)|(?:na\s+)?rede))?\s*[:,-]?\s+([\s\S]+)$/i);
+  if (command) {
+    let subject = command[1].trim();
+    // Politeness and the search destination can appear in either order in speech.
+    for (let index = 0; index < 3; index++) subject = subject
+      .replace(/^(?:(?:pra|para)\s+mim|por favor|na\s+(?:web|internet|rede))[,.:!]?\s+/i, '');
+    return subject.replace(/[,!]?\s+por favor[.!]?$/i, '').trim();
+  }
+  return request.webSearch ? text : undefined;
 }
 
 // Search results become clickable links, never arbitrary server fetch destinations.

@@ -22,6 +22,11 @@ describe('pesquisa e fontes', () => {
     expect(searchQuery(request('Explique React'))).toBeUndefined();
     expect(searchQuery(request('hora', { webSearch: true }))).toBe('hora');
     expect(searchQuery(request('anotar pesquisar React'))).toBeUndefined();
+    expect(searchQuery(request('Oi, Jarvis pesquisa pra mim notícias sobre a guerra na Ucrânia'))).toBe('notícias sobre a guerra na Ucrânia');
+    expect(searchQuery(request('Olá, Jarvis, pode pesquisar para mim na internet React, por favor'))).toBe('React');
+    expect(searchQuery(request('Jarvis, por favor, procure notícias de tecnologia'))).toBe('notícias de tecnologia');
+    expect(searchQuery(request('anotar Oi Jarvis pesquisa pra mim React'))).toBeUndefined();
+    expect(searchQuery(request('Oi, Jarvis, tudo bem?'))).toBeUndefined();
   });
   it('extrai fontes HTML/XML, entidades e URLs reais; remove duplicatas e links inseguros', () => {
     expect(parseResults(html + html + `<div class="result"><a class="result__a" href="javascript:alert(1)">perigo</a></div>`, 'duckduckgo')).toEqual([
@@ -157,5 +162,19 @@ describe('pesquisa e fontes', () => {
     expect(validSources([{ ...reply.sources[0], publishedAt: 42 }])).toBe(false);
     expect(parseResults('<rss><channel>' + item('Sem data') + '</channel></rss>', 'bing', { query: 'IA', recent: true, now })).toEqual([]);
     expect(parseResults('<rss><channel><item><title>IA</title><link>https://www.bing.com/news/apiclick.aspx?url=javascript%3Aalert(1)</link></item></channel></rss>', 'bing')).toEqual([]);
+  });
+  it.each([false, true])('o pedido falado da imagem extrai o assunto e recebe fontes datadas (webSearch=%s)', async webSearch => {
+    const message = 'Oi, Jarvis pesquisa pra mim notícias sobre a guerra na Ucrânia';
+    const datedFeed = `<rss><channel><item><title>Ukraine war: update</title><link>https://example.com/ukraine</link><description>New developments in Ukraine.</description><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
+    const searchFetch = vi.fn<typeof fetch>(async () => rssResponse(datedFeed));
+    const app = await buildApp({ databasePath: ':memory:', searchFetch }); apps.push(app);
+    const reply = await app.inject({ method: 'POST', url: '/api/chat', payload: request(message, { webSearch }) });
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json()).toMatchObject({ command: 'search', sources: [{ title: 'Ukraine war: update' }], webSearch: { query: 'notícias sobre a guerra na Ucrânia' } });
+    expect(new URL(String(searchFetch.mock.calls[0][0])).searchParams.get('q')).toBe('a guerra na Ucrânia');
+    expect(searchFetch).toHaveBeenCalledTimes(1);
+    const intent = searchIntent(message);
+    expect(intent.engineQuery).toBe('a guerra na Ucrânia');
+    expect(intent.relevant({ title: 'Tecnologia no Bahrain', url: 'https://example.com/other', snippet: 'Novidades do governo.' })).toBe(false);
   });
 });

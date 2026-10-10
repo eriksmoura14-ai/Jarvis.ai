@@ -5,6 +5,7 @@ O backend consulta resultados públicos sem uma chave de busca adicional. Nas bu
 ## Como usar
 
 - Diga ou escreva `Jarvis, pesquise notícias de tecnologia`.
+- Também pode falar naturalmente: `Oi, Jarvis pesquisa pra mim notícias sobre a guerra na Ucrânia`. A busca retira a saudação, o nome do assistente e expressões como `pra mim`/`por favor` antes de consultar e filtrar o assunto. Pedidos com verbos explícitos de pesquisa funcionam mesmo com **Pesquisar na web** desligado; frases fora dessas formas ainda podem exigir a opção ligada.
 - Também aceita `pesquisar na web <assunto>`, `busque <assunto>` e `procure <assunto>`.
 - Ou ative **Pesquisar na web** e envie o assunto. Enquanto a opção estiver ativa, a mensagem vira uma consulta, mesmo se for um comando como `hora`. Desative para voltar aos comandos/conversa comuns.
 - Abra as fontes abaixo da resposta para conferir os detalhes. Os links também ficam no histórico e no modo voz. A leitura falada usa somente o texto da resposta.
