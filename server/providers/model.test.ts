@@ -39,6 +39,16 @@ describe('conexões de modelo', () => {
     await expect(provider.respond(request)).rejects.not.toThrow('test-secret');
     if (status === 429) await expect(provider.respond(request)).rejects.toMatchObject({ statusCode: 429 });
   });
+  it('usa esforço baixo no GPT-OSS e avisa quando o provedor corta a resposta', async () => {
+    const transport = vi.fn<typeof fetch>(async () => Response.json({ choices: [{ message: { content: 'Um resumo incompleto', reasoning: 'Não deve aparecer no chat' }, finish_reason: 'length' }] }));
+    const provider = new ModelProvider({ provider: 'groq', model: 'openai/gpt-oss-20b', apiKey: 'test-secret' }, transport);
+    const response = await provider.respond(request);
+    const body = JSON.parse(transport.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({ reasoning_effort: 'low', include_reasoning: false, max_completion_tokens: 1024 });
+    expect(body).not.toHaveProperty('max_tokens');
+    expect(response.message).toContain('A resposta atingiu o limite');
+    expect(response.message).not.toContain('Não deve aparecer no chat');
+  });
   it.each([{}, { choices: [] }, { choices: [{ message: { content: ' ' } }] }])('rejeita respostas vazias %j', async data => {
     const provider = new ModelProvider({ provider: 'groq', model: 'model', apiKey: 'test-secret' }, async () => Response.json(data));
     await expect(provider.respond(request)).rejects.toThrow('texto válido');

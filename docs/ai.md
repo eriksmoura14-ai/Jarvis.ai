@@ -35,7 +35,7 @@ ollama pull qwen2.5:3b
 ollama serve
 ```
 
-Se o aplicativo Ollama já estiver rodando, não inicie um segundo servidor. Confirme o modelo instalado com `ollama list`. A inferência por CPU pode ser lenta; o JARVIS limita cada resposta a 15 segundos e até 700 tokens solicitados. Um modelo que exceda esse tempo precisa de hardware mais rápido ou ser menor.
+Se o aplicativo Ollama já estiver rodando, não inicie um segundo servidor. Confirme o modelo instalado com `ollama list`. A inferência por CPU pode ser lenta; o JARVIS limita cada resposta Ollama a 15 segundos e até 700 tokens solicitados. Um modelo que exceda esse tempo precisa de hardware mais rápido ou ser menor. Na Groq, os modelos GPT-OSS 20B/120B usam esforço baixo e até 1.024 tokens de conclusão para reservar espaço à resposta após o raciocínio; outros modelos mantêm 700.
 
 ```dotenv
 AI_PROVIDER=ollama

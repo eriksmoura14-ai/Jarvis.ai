@@ -56,7 +56,9 @@ export async function buildApp(options: AppOptions = {}) {
   });
   app.get('/api/health', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
+    const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', webSearch: { enabled: true },
+      ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
   });
   app.post<{ Body: ChatRequest }>('/api/chat', {

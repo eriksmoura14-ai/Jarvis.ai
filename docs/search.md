@@ -9,7 +9,7 @@ O backend consulta resultados públicos sem uma chave de busca adicional. Usa o 
 - Ou ative **Pesquisar na web** e envie o assunto. Enquanto a opção estiver ativa, a mensagem vira uma consulta, mesmo se for um comando como `hora`. Desative para voltar aos comandos/conversa comuns.
 - Abra as fontes abaixo da resposta para conferir os detalhes. Os links também ficam no histórico e no modo voz. A leitura falada usa somente o texto da resposta.
 
-O backend atualizado informa `webSearch: { enabled: true }` em `/api/health`. Isso anuncia suporte à pesquisa, não garante que os buscadores estejam acessíveis naquele momento. O Pages precisa de um backend conectado; sozinho não pesquisa na web.
+O backend atualizado informa `webSearch: { enabled: true }` em `/api/health`. Isso anuncia suporte à pesquisa, não garante que os buscadores estejam acessíveis naquele momento. No Render, o campo `revision` identifica o commit em execução quando a plataforma fornece `RENDER_GIT_COMMIT`. O Pages precisa de um backend conectado; sozinho não pesquisa na web.
 
 O servidor devolve até cinco fontes, com título, endereço e trecho do resultado. Não baixa nem lê a página completa. Se a IA estiver configurada, recebe os trechos para criar um resumo com referências `[1]`, `[2]` etc. Os links são selecionados pelo backend a partir da busca, nunca gerados pelo modelo. Sem IA ou se o resumo falhar, os resultados reais continuam disponíveis. Se a busca falhar, não há resumo nem fontes inventadas.
 
@@ -17,7 +17,7 @@ O servidor devolve até cinco fontes, com título, endereço e trecho do resulta
 
 A pesquisa envia apenas o assunto ao buscador. O resumo envia os trechos dos resultados e o contexto recente à Groq/Ollama. A chave Groq fica somente no backend e não acompanha consultas ao buscador. O histórico, inclusive fontes, fica no navegador; o backend não persiste consultas. Não coloque senhas nem informações privadas no assunto de uma pesquisa.
 
-São no máximo 300 caracteres por assunto, cinco resultados, duas pesquisas simultâneas e seis tentativas por minuto no servidor inteiro. Tentativas que falham também contam no limite por minuto. Cada buscador tem até 4,5 segundos; o resumo mantém o limite de 15 segundos e o orçamento diário de IA existente. O navegador aguarda até 30 segundos. Interromper a conversa cancela também a busca/resumo.
+São no máximo 300 caracteres por assunto, cinco resultados, duas pesquisas simultâneas e seis tentativas por minuto no servidor inteiro. Tentativas que falham também contam no limite por minuto. Cada buscador tem até 4,5 segundos; o resumo mantém o limite de 15 segundos e o orçamento diário de IA existente. O navegador aguarda até 30 segundos. Interromper a conversa cancela também a busca/resumo. Resumos pedem até quatro frases curtas. Nos modelos GPT-OSS 20B/120B da Groq, a chamada usa esforço de raciocínio baixo e até 1.024 tokens de conclusão, incluindo raciocínio; os demais mantêm 700. Uma resposta encerrada pelo limite recebe um aviso explícito.
 
 Títulos e trechos são dados externos não confiáveis. O prompt manda ignorar instruções presentes neles, sem executar código ou ferramentas. A IA ainda pode errar; citar um link não prova a afirmação. A data mostrada é a da consulta, não a publicação do artigo. Não há garantia de resultados exaustivos, atualizados ou relevantes, nem de preços, notícias ou outros dados em tempo real.
 

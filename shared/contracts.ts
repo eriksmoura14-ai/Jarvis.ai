@@ -21,7 +21,7 @@ export interface ChatResponse {
   sources?: SearchSource[];
   webSearch?: WebSearchInfo;
 }
-export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true } }
+export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true } }
 export interface AssistantProvider {
   readonly name: ProviderName;
   respond(request: ChatRequest, signal?: AbortSignal): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
