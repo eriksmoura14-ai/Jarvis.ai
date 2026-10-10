@@ -72,6 +72,14 @@ O GitHub Pages não executa Node.js nem hospeda modelos. É necessário um servi
 
 A escolha/hospedagem desse serviço exige uma conta e depende das condições atuais dos planos gratuitos. Esta versão não contrata serviços nem cadastra cartão. Um computador com Ollama também precisa ficar ligado e ter acesso ao backend; publicar apenas o frontend não permite que outros dispositivos alcancem `localhost` desse computador.
 
+### Configuração no Render
+
+No serviço **Web Service**, use Node.js 24, build `npm ci && npm run build` e start `npm start`. Em **Environment**, defina `HOST=0.0.0.0`, além das variáveis do provedor e de `ALLOWED_ORIGINS` indicadas acima. Deixe o Render fornecer `PORT`.
+
+O projeto também reconhece a variável automática `RENDER=true` e usa `0.0.0.0` quando `HOST` não foi definida. Se houver `HOST=127.0.0.1` no painel ou em um `.env`, altere para `0.0.0.0`: um valor explícito tem prioridade. Não envie o `.env.example` de desenvolvimento como configuração de produção sem ajustar essa variável.
+
+Se o log mostrar `No open ports detected on 0.0.0.0` e o servidor estiver escutando em `127.0.0.1`, corrija `HOST` e use **Save, rebuild, and deploy** ou **Manual Deploy → Deploy latest commit**. A mensagem `.env not found. Continuing without it.` é normal quando as variáveis vêm do painel. Depois que o deploy ficar **Live**, confira `/api/health` e faça uma pergunta para verificar a inferência; um build bem-sucedido sozinho não confirma a IA.
+
 No celular:
 
 1. Abra [o JARVIS](https://eriksmoura14-ai.github.io/Jarvis.ai/).

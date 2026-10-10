@@ -42,7 +42,7 @@ O backend lê `.env` se existir. Para personalizar, copie `.env.example` para `.
 
 | Variável | Padrão | Finalidade |
 | --- | --- | --- |
-| `HOST` | `127.0.0.1` | Interface de rede da API |
+| `HOST` | `127.0.0.1`; `0.0.0.0` no Render | Interface de rede da API; valor explícito tem prioridade |
 | `PORT` | `3001` | Porta da API |
 | `DATABASE_PATH` | `./data/jarvis.sqlite` | Arquivo SQLite de notas |
 

@@ -9,7 +9,8 @@ const shutdown = async () => { await app.close(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
 try {
-  await app.listen({ port: Number(process.env.PORT ?? 3001), host: process.env.HOST ?? '127.0.0.1' });
+  const host = process.env.HOST ?? (process.env.RENDER === 'true' ? '0.0.0.0' : '127.0.0.1');
+  await app.listen({ port: Number(process.env.PORT ?? 3001), host });
 } catch (error) {
   app.log.error(error);
   await app.close();
