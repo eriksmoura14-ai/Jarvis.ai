@@ -1,6 +1,7 @@
 import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/contracts';
 import { loadBackend, normalizeBackend } from './backend';
 import { searchQuery, validSearchInfo, validSources } from '../../shared/search';
+import { lockPersonal } from './personal';
 
 export const BROWSER_MODE = import.meta.env.MODE === 'pages';
 
@@ -22,9 +23,10 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal): Prom
   const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const response = await fetch(`${BROWSER_MODE ? loadBackend() : ''}/api/chat`, {
-      method: 'POST', credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal,
+      method: 'POST', credentials: BROWSER_MODE ? 'omit' : 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', ...(!BROWSER_MODE ? { 'X-Jarvis-Client': '1' } : {}) }, body: JSON.stringify(body), signal: controller.signal,
     });
     if (!response.ok) {
+      if (response.status === 401 && !BROWSER_MODE) lockPersonal();
       const error = await response.json().catch(() => null) as { error?: string } | null;
       throw new Error(error?.error ?? 'Não foi possível enviar a mensagem.');
     }

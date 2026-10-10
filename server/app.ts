@@ -11,12 +11,18 @@ import { ModelError, ModelProvider, type AIConfig } from './providers/model.js';
 import { ResearchProvider } from './providers/research.js';
 import { SearchError, WebSearch } from './search.js';
 import type { AssistantProvider } from './providers/types.js';
-import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse } from '../shared/contracts.js';
+import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse, type Message } from '../shared/contracts.js';
+import { conversationContext } from '../shared/context.js';
+import { validSources, validSearchInfo } from '../shared/search.js';
+import { PersonalAuth, type PersonalConfig } from './personal/auth.js';
+import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type DocumentBackend } from './personal/store.js';
+import { memoryCommand } from './personal/commands.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
   ai?: AIConfig; modelFetch?: typeof fetch; aiDailyLimit?: number; allowedOrigins?: string[];
   searchFetch?: typeof fetch;
+  personal?: PersonalConfig; personalBackend?: DocumentBackend;
 }
 export async function buildApp(options: AppOptions = {}) {
   const allowedOrigins = new Set((options.allowedOrigins ?? []).map(value => {
@@ -28,21 +34,28 @@ export async function buildApp(options: AppOptions = {}) {
   if (!Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 1000) throw new Error('AI_DAILY_LIMIT deve ser um inteiro entre 1 e 1000.');
   const app = Fastify({ logger: options.logger ?? false, bodyLimit: 65_536, ajv: { customOptions: { coerceTypes: false, removeAdditional: false } } });
   const store = new NoteStore(options.databasePath ?? process.env.DATABASE_PATH ?? './data/jarvis.sqlite');
-  const local = new LocalProvider(store);
-  const provider = options.provider ?? (options.ai ? new HybridProvider(local, new ModelProvider(options.ai, options.modelFetch), day => store.claimAIRequest(day, dailyLimit)) : local);
+  const personal = options.personal ? new PersonalStore(options.personalBackend ?? (options.personal.supabase
+    ? new SupabaseDocument(options.personal.supabase.url, options.personal.supabase.key) : new SQLiteDocument(store))) : undefined;
+  const auth = options.personal && personal ? new PersonalAuth(options.personal, personal) : undefined;
+  const local = new LocalProvider(personal ?? store);
+  const provider = options.provider ?? (options.ai ? new HybridProvider(local, new ModelProvider(options.ai, options.modelFetch), day => (personal ?? store).claimAIRequest(day, dailyLimit)) : local);
   const assistant = new ResearchProvider(provider, new WebSearch(options.searchFetch));
   app.addHook('onClose', async () => store.close());
   await app.register(rateLimit, { global: false });
   app.addHook('onRequest', async (request, reply) => {
+    if (!request.url.startsWith('/api/')) return;
+    reply.header('Cache-Control', 'no-store');
     const origin = request.headers.origin;
-    if (!origin || !request.url.startsWith('/api/')) return;
     let sameHost = false;
-    try { sameHost = new URL(origin).host === request.headers.host; } catch { /* Reject malformed origins. */ }
-    if (!sameHost && !allowedOrigins.has(origin)) return reply.code(403).send({ error: 'Este site não está autorizado pelo backend. Confira ALLOWED_ORIGINS.' });
-    if (allowedOrigins.has(origin)) {
+    try { if (origin) { const url = new URL(origin); sameHost = url.host === request.headers.host && ['http:', 'https:'].includes(url.protocol) && (!options.personal?.secure || url.protocol === 'https:'); } } catch { /* Reject malformed origins. */ }
+    if (origin && !sameHost && (auth || !allowedOrigins.has(origin))) return reply.code(403).send({ error: auth ? 'Use o endereço do próprio JARVIS para acessar sua conta.' : 'Este site não está autorizado pelo backend. Confira ALLOWED_ORIGINS.' });
+    if (origin && !auth && allowedOrigins.has(origin)) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Vary', 'Origin');
     }
+    if (auth && !['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.headers['x-jarvis-client'] !== '1') return reply.code(403).send({ error: 'Pedido sem proteção de origem. Reabra o JARVIS.' });
+    const path = request.url.split('?')[0];
+    if (auth && !['/api/health', '/api/personal/session', '/api/personal/login'].includes(path) && !await auth.authenticated(request)) return reply.code(401).send({ error: 'Sua sessão expirou. Entre novamente.' });
   });
   app.options('/api/chat', async (_request, reply) => reply
     .header('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -61,6 +74,44 @@ export async function buildApp(options: AppOptions = {}) {
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
   });
+  app.get('/api/personal/session', async request => personal && auth
+    ? { enabled: true, authenticated: await auth.authenticated(request), storage: personal.name } : { enabled: false });
+  if (personal && auth) {
+    app.post<{ Body: { password: string } }>('/api/personal/login', {
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+      schema: { body: { type: 'object', additionalProperties: false, required: ['password'], properties: { password: { type: 'string', minLength: 1, maxLength: 200 } } } },
+    }, async (request, reply) => {
+      if (!await auth.login(request.body.password, reply)) return reply.code(401).send({ error: 'Senha incorreta.' });
+      return { ok: true };
+    });
+    app.post('/api/personal/logout', async (request, reply) => { await auth.logout(request, reply); return { ok: true }; });
+    app.get('/api/personal/data', async (request, reply) => {
+      if (request.headers['if-none-match'] && request.headers['if-none-match'] === `"personal-${await personal.revision()}"`) return reply.code(304).send();
+      const data = await personal.snapshotRecord();
+      reply.header('ETag', `"personal-${data.version}"`);
+      return data.snapshot;
+    });
+    app.delete('/api/personal/history', async () => { await personal.clearHistory(); return { ok: true }; });
+    app.post<{ Body: { content: string } }>('/api/personal/memories', {
+      schema: { body: { type: 'object', additionalProperties: false, required: ['content'], properties: { content: { type: 'string', minLength: 1, maxLength: 500 } } } },
+    }, async (request, reply) => { if (!request.body.content.trim()) return reply.code(400).send({ error: 'Digite uma memória.' }); await personal.remember(request.body.content.trim()); return { ok: true }; });
+    app.delete<{ Params: { id: string } }>('/api/personal/memories/:id', async request => { await personal.forget(request.params.id); return { ok: true }; });
+    app.delete('/api/personal/memories', async () => { await personal.forgetAll(); return { ok: true }; });
+    app.post<{ Body: { messages: Message[]; legacySessionId?: string } }>('/api/personal/import', {
+      bodyLimit: 1_500_000, schema: { body: { type: 'object', additionalProperties: false, required: ['messages'], properties: {
+        messages: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['id', 'role', 'content', 'createdAt'], properties: {
+          id: { type: 'string', minLength: 1, maxLength: 100 }, role: { enum: ['user', 'assistant'] },
+          content: { type: 'string', minLength: 1, maxLength: 6000 }, createdAt: { type: 'string', maxLength: 50 },
+          provider: { enum: ['local', 'groq', 'ollama'] }, sources: { type: 'array', maxItems: 5 }, webSearch: { type: 'object' },
+        } } }, legacySessionId: { type: 'string', pattern: '^[a-fA-F0-9-]{36}$' },
+      } } },
+    }, async (request, reply) => {
+      const messages = request.body.messages;
+      if (messages.some(message => !Number.isFinite(Date.parse(message.createdAt)) || (message.sources !== undefined && !validSources(message.sources)) || (message.webSearch !== undefined && !validSearchInfo(message.webSearch)))) return reply.code(400).send({ error: 'O histórico antigo contém dados inválidos.' });
+      await personal.import(messages.filter(message => message.id !== 'welcome'), request.body.legacySessionId ? store.list(request.body.legacySessionId) : []);
+      return { ok: true };
+    });
+  }
   app.post<{ Body: ChatRequest }>('/api/chat', {
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
     schema: {
@@ -89,13 +140,21 @@ export async function buildApp(options: AppOptions = {}) {
     const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on('close', disconnected);
     try {
-      const response: ChatResponse = { ...await assistant.respond(request.body, controller.signal), id: randomUUID(), createdAt: new Date().toISOString() };
+      const snapshot = personal ? await personal.snapshot() : undefined;
+      const body = snapshot ? { ...request.body, sessionId: 'owner', context: conversationContext(snapshot.history), personalMemory: snapshot.memories.map(memory => memory.content) } : request.body;
+      const command = personal && !request.body.webSearch ? await memoryCommand(body, personal) : undefined;
+      const response: ChatResponse = { ...(command ?? await assistant.respond(body, controller.signal)), id: randomUUID(), createdAt: new Date().toISOString() };
+      if (personal && snapshot) {
+        await personal.append([{ id: randomUUID(), role: 'user', content: request.body.message, createdAt: response.createdAt },
+          { id: response.id, role: 'assistant', content: response.message, createdAt: response.createdAt, provider: response.provider,
+            ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], snapshot.generation);
+      }
       reply.header('Cache-Control', 'no-store');
       return response;
     } finally { reply.raw.removeListener('close', disconnected); }
   });
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ModelError || error instanceof SearchError) return reply.code(error.statusCode).send({ error: error.message });
+    if (error instanceof ModelError || error instanceof SearchError || error instanceof PersonalError) return reply.code(error.statusCode).send({ error: error.message });
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;
     if (status >= 500) request.log.error(error);
     reply.code(status).send({ error: status === 429 ? 'Muitas mensagens. Aguarde um minuto e tente novamente.' : status < 500 ? 'Pedido inválido. Confira a mensagem e tente novamente.' : 'O assistente encontrou um erro. Tente novamente.' });

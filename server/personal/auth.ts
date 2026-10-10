@@ -1,0 +1,51 @@
+import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { PersonalError, PersonalStore, sessionHash } from './store.js';
+
+export interface PersonalConfig { password: string; secure: boolean; supabase?: { url: string; key: string } }
+export function readPersonalConfig(env: NodeJS.ProcessEnv): PersonalConfig | undefined {
+  if (!env.JARVIS_PASSWORD && !env.SUPABASE_URL && !env.SUPABASE_SECRET_KEY) return;
+  if (!env.JARVIS_PASSWORD || env.JARVIS_PASSWORD.length < 12 || env.JARVIS_PASSWORD.length > 200) throw new Error('Defina JARVIS_PASSWORD no backend com 12 a 200 caracteres.');
+  if (Boolean(env.SUPABASE_URL) !== Boolean(env.SUPABASE_SECRET_KEY)) throw new Error('Configure SUPABASE_URL e SUPABASE_SECRET_KEY juntas no backend.');
+  return { password: env.JARVIS_PASSWORD, secure: env.RENDER === 'true' || env.NODE_ENV === 'production',
+    ...(env.SUPABASE_URL && env.SUPABASE_SECRET_KEY ? { supabase: { url: env.SUPABASE_URL, key: env.SUPABASE_SECRET_KEY } } : {}) };
+}
+const derive = promisify(scrypt);
+const lifetime = 7 * 24 * 60 * 60 * 1000;
+export class PersonalAuth {
+  private verifier: Buffer;
+  private version: string;
+  private attempts: number[] = [];
+  private active = 0;
+  constructor(private config: PersonalConfig, private store: PersonalStore) {
+    if (config.password.length < 12 || config.password.length > 200) throw new Error('A senha pessoal precisa ter 12 a 200 caracteres.');
+    this.verifier = scryptSync(config.password, 'jarvis-personal-password-v1', 32);
+    this.version = createHmac('sha256', this.verifier).update('session-version').digest('hex');
+  }
+  token(request: FastifyRequest) {
+    const match = request.headers.cookie?.match(/(?:^|;\s*)jarvis_session=([a-f0-9]{64})(?:;|$)/);
+    return match?.[1];
+  }
+  async authenticated(request: FastifyRequest) { const token = this.token(request); return token ? this.store.validSession(sessionHash(token), this.version) : false; }
+  async login(password: string, reply: FastifyReply) {
+    const now = Date.now(); this.attempts = this.attempts.filter(time => now - time < 60_000);
+    if (this.active >= 2 || this.attempts.length >= 10) throw new PersonalError('Muitas tentativas de acesso. Aguarde um minuto.', 429);
+    this.attempts.push(now); this.active++;
+    try {
+      const input = await derive(password, 'jarvis-personal-password-v1', 32) as Buffer;
+      if (!timingSafeEqual(this.verifier, input)) return false;
+      const token = randomBytes(32).toString('hex');
+      await this.store.addSession(sessionHash(token), this.version, Date.now() + lifetime);
+      this.cookie(reply, token, lifetime / 1000);
+      return true;
+    } finally { this.active--; }
+  }
+  async logout(request: FastifyRequest, reply: FastifyReply) {
+    const token = this.token(request); if (token) await this.store.removeSession(sessionHash(token));
+    this.cookie(reply, '', 0);
+  }
+  private cookie(reply: FastifyReply, token: string, maxAge: number) {
+    reply.header('Set-Cookie', `jarvis_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${this.config.secure ? '; Secure' : ''}`);
+  }
+}

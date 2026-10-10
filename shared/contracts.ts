@@ -15,7 +15,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   id: string;
   message: string;
-  command: 'help' | 'greeting' | 'time' | 'date' | 'calculate' | 'note-add' | 'note-list' | 'note-clear' | 'unknown' | 'conversation' | 'search';
+  command: 'help' | 'greeting' | 'time' | 'date' | 'calculate' | 'note-add' | 'note-list' | 'note-clear' | 'memory' | 'unknown' | 'conversation' | 'search';
   provider: ProviderName;
   createdAt: string;
   sources?: SearchSource[];
@@ -27,9 +27,9 @@ export interface AssistantProvider {
   respond(request: ChatRequest, signal?: AbortSignal): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
 }
 export interface NoteRepository {
-  add(sessionId: string, content: string): boolean;
-  list(sessionId: string): { content: string }[];
-  clear(sessionId: string): number;
+  add(sessionId: string, content: string): boolean | Promise<boolean>;
+  list(sessionId: string): { content: string }[] | Promise<{ content: string }[]>;
+  clear(sessionId: string): number | Promise<number>;
 }
 export interface Message {
   id: string;
@@ -40,3 +40,7 @@ export interface Message {
   sources?: SearchSource[];
   webSearch?: WebSearchInfo;
 }
+
+export interface PersonalMemory { id: string; content: string; createdAt: string }
+export interface PersonalSnapshot { history: Message[]; memories: PersonalMemory[]; notes: { content: string }[]; generation: number; storage: 'sqlite' | 'supabase' }
+export type PersonalSession = { enabled: false } | { enabled: true; authenticated: boolean; storage: 'sqlite' | 'supabase' };

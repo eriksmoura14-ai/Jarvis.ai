@@ -19,6 +19,7 @@ export class NoteStore {
       );
       CREATE INDEX IF NOT EXISTS notes_session ON notes(session_id);
       CREATE TABLE IF NOT EXISTS ai_usage (day TEXT PRIMARY KEY, count INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS personal_documents (id TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL);
     `);
   }
   add(sessionId: string, content: string): boolean {
@@ -40,4 +41,11 @@ export class NoteStore {
       ON CONFLICT(day) DO UPDATE SET count = count + 1 WHERE count < ?`).run(day, limit).changes === 1;
   }
   close(): void { this.db.close(); }
+  readDocument(key = 'owner'): { value: string; version: number } | undefined {
+    return this.db.prepare('SELECT value, version FROM personal_documents WHERE id = ?').get(key) as { value: string; version: number } | undefined;
+  }
+  writeDocument(value: string, version: number, key = 'owner'): boolean {
+    return this.db.prepare(`INSERT INTO personal_documents (id, value, version) VALUES (?, ?, 1)
+      ON CONFLICT(id) DO UPDATE SET value = excluded.value, version = version + 1 WHERE version = ?`).run(key, value, version).changes === 1;
+  }
 }

@@ -1,0 +1,140 @@
+# JARVIS pessoal: login, memória e sincronização
+
+O modo pessoal tem um único dono, que entra com a mesma senha no celular e no
+computador pelo endereço do Render. Não cria cadastro público. Sem
+`JARVIS_PASSWORD`, o modo anterior continua disponível e **não é privado**.
+
+## Ativar no Render com Supabase
+
+1. Abra <https://supabase.com/dashboard> e crie um projeto na modalidade **Free**.
+   Confira os termos e as cotas exibidos na sua conta; não ative planos pagos.
+   Escolha uma senha forte para o banco e guarde-a. Ela não é a senha do JARVIS.
+2. No projeto, abra **SQL Editor → New query**, cole o conteúdo de
+   [`supabase/personal.sql`](../supabase/personal.sql) e execute **Run**. O script
+   cria uma tabela com RLS e bloqueia os papéis públicos `anon` e `authenticated`.
+3. Em **Project Settings → API / API Keys** (ou na janela **Connect**), encontre
+   a **Project URL** e uma chave **secret** de backend, começando por `sb_secret_`.
+   Também é aceita a chave antiga **service_role**. Não use a chave publishable/anon.
+   Nunca coloque a chave no chat, GitHub ou frontend.
+4. Abra <https://dashboard.render.com/web/srv-db4o3rl9fdbs73a9haa0/env> e adicione,
+   como variáveis do serviço:
+
+   | Nome | Valor colocado somente no Render |
+   | --- | --- |
+   | `JARVIS_PASSWORD` | Uma senha pessoal forte com 12 a 200 caracteres |
+   | `SUPABASE_URL` | Project URL, como `https://seu-projeto.supabase.co` |
+   | `SUPABASE_SECRET_KEY` | Chave secret de backend ou service_role |
+
+   Preserve `AI_PROVIDER`, `AI_MODEL` e `GROQ_API_KEY`. Clique em **Save, rebuild,
+   and deploy**, ou salve e faça um novo deploy. Não crie variáveis `VITE_` para
+   senhas ou chaves. O script SQL deve ser executado antes do primeiro login.
+5. Depois de **Live**, abra <https://jarvis-ai-dwqp.onrender.com/> no computador e
+   no celular. A tela deve pedir sua **senha pessoal do JARVIS**. Entre nos dois.
+   Em **Preferências → Memória pessoal**, o armazenamento deve aparecer como
+   **Supabase**. Se a tela ainda não pedir senha, a privacidade não está ativada.
+
+Esse passo precisa da sua conta: o agente não tem acesso administrativo aos
+painéis Supabase/Render. Os testes locais não confirmam a configuração do seu
+projeto. Não há recurso que crie uma conta ou informe uma senha automaticamente.
+
+## Usar
+
+- `lembre que estudo programação à noite` salva uma preferência explícita.
+- `minhas memórias` ou `o que você lembra sobre mim` consulta as preferências.
+- `apagar memórias` remove todas as preferências salvas.
+- **Preferências → Memória pessoal** permite adicionar e excluir individualmente.
+- `anotar <texto>`, `notas` e `apagar notas` passam a usar a mesma conta nos aparelhos.
+- As últimas 100 mensagens ficam na conta. A interface atualiza ao voltar para a
+  aba e a cada 10 segundos enquanto está visível. A IA recebe o contexto recente
+  armazenado no servidor, permitindo continuar uma conversa em outro aparelho.
+- **Limpar conversa** remove o histórico da conta, preservando notas e memórias.
+  Respostas que terminarem depois dessa limpeza não restauram o histórico apagado.
+- **Sair da conta** revoga a sessão do aparelho. Mudar `JARVIS_PASSWORD` e reiniciar
+  o serviço invalida todas as sessões anteriores; os dados da conta são preservados.
+
+Memórias não são extraídas automaticamente da conversa. Preferências salvas podem
+ser enviadas ao provedor de IA quando você faz uma pergunta ou pede um resumo de
+pesquisa. **Apagar uma memória não apaga conversas que mencionem essa informação**:
+limpe também o histórico para removê-la do contexto recente. Exclusões são feitas
+no banco ativo; backups do provedor e dados já enviados a serviços externos seguem
+as políticas desses serviços. Não há criptografia adicional de ponta a ponta.
+
+## Histórico antigo e funcionamento sem rede
+
+Não há migração automática. **Importar histórico deste navegador** envia, com seu
+clique, até 100 mensagens compatíveis e notas da sessão antiga que ainda existirem
+no SQLite. Depois da importação, esse histórico antigo é removido do navegador.
+Faça isso em cada aparelho cujo histórico deseja trazer. Dados já perdidos por um
+deploy do Render não podem ser recuperados pela importação. Notas do modo estático
+do GitHub Pages não são importadas por esse fluxo; a origem do navegador é outra.
+
+No modo pessoal, o histórico da conta não é salvo no localStorage. Ele fica na
+memória da página durante a sessão; preferências visuais e de voz continuam locais.
+Sem servidor ou sem banco, o aplicativo informa o erro e não libera uma sessão
+privada por fallback. Os comandos também precisam do servidor autenticado.
+O site antigo do GitHub Pages não permite login com cookies deste modo: use o
+endereço do Render. Depois de ativar a senha, a API recusa acesso externo do Pages.
+
+## Desenvolvimento local
+
+Copie `.env.example` para `.env` sem sobrescrever configurações existentes. Defina
+`JARVIS_PASSWORD` com uma senha sua e deixe as duas variáveis Supabase vazias para
+usar SQLite no computador. Depois:
+
+```sh
+npm ci
+npm run dev
+```
+
+Sem `NODE_ENV=production`/`RENDER=true`, o cookie funciona em HTTP local. O modo
+HTTP é apenas para desenvolvimento; hospedagem exige HTTPS. No Render, usar
+apenas SQLite pode perder dados em deploys. Para sincronizar entre aparelhos,
+todos precisam acessar **o mesmo backend**, não instâncias SQLite separadas.
+
+```sh
+npm test
+npm run build
+npm run test:personal
+E2E_PRODUCTION=1 npm run test:personal
+```
+
+Os E2E usam senha exclusivamente de fixture e SQLite temporário. Desktop e mobile
+rodam em processos separados para respeitar o limite real de tentativas de login.
+Os testes do adaptador Supabase simulam HTTPS/CAS e falhas; não substituem uma
+verificação no projeto real.
+
+## Arquitetura e limites
+
+`PersonalAuth` deriva o verificador com scrypt, compara em tempo constante e usa
+tokens aleatórios de 256 bits. Só o hash do token é guardado no banco. Cookies têm
+HttpOnly, SameSite=Strict, validade de sete dias e Secure na hospedagem. Logout e
+troca de senha invalidam sessões; há até 20 sessões ativas por dono. Login limita
+cinco tentativas por IP/minuto e dez no total/minuto, com duas verificações simultâneas.
+
+Todas as rotas de chat e dados pessoais exigem autenticação. Mutações também
+exigem o cabeçalho do cliente e rejeitam origens externas, mesmo que antes
+permitidas pelo CORS. Health e estado do acesso permanecem públicos, sem dados
+pessoais. O backend não usa Supabase Auth: a senha única é verificada no Fastify.
+
+`PersonalStore` mantém até 100 mensagens, 100 notas e 30 memórias de 500 caracteres.
+O limite diário de IA e as sessões também ficam no armazenamento durável. A
+implementação usa um documento JSON para o dono e outro para as sessões, com compare-and-swap por versão
+e até seis tentativas para não sobrescrever atualizações concorrentes. A sincronização usa ETag para não baixar novamente um histórico inalterado. Não é
+arquitetura para múltiplos usuários. Supabase é acessado exclusivamente no servidor
+por HTTPS com a chave secret/service_role; resultados de falhas são sanitizados.
+
+O plano Free pode pausar projetos por inatividade e aplica limites próprios.
+O Render gratuito também pode demorar para despertar. Não foram ativados planos
+pagos nem garantido funcionamento contínuo. Faça backups pelo seu provedor.
+
+## Testar após ativar
+
+Entre no computador e celular, salve uma preferência e uma nota, abra o outro
+aparelho e confira os dados. Recarregue, encerre uma sessão e confirme que ela pede
+senha novamente. Faça novo deploy e confirme que memórias e conversas permanecem.
+Teste também negar o microfone e usar digitação.
+
+No **Xbox Edge**, ainda precisam de teste físico: teclado virtual da senha,
+direcional/A/B no login e nas listas, armazenamento do cookie, redimensionamento,
+permissão do microfone, reconhecimento e síntese. Os testes mobile de Chromium
+não validam o hardware Xbox nem as vozes reais de cada celular.

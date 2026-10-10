@@ -17,3 +17,6 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_PRODUCTION: '1'
+      - run: npm run test:personal
+        env:
+          E2E_PRODUCTION: '1'

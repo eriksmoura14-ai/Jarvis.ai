@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Activity, ArrowDown, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clock3, Cpu, Gamepad2, Keyboard, MessageSquare, Mic, NotebookPen, Send, Settings2, ShieldCheck, Sparkles, Square, Trash2, Volume2, VolumeX, WifiOff, X } from 'lucide-react';
 import { Core } from './components/Core';
 import { VoiceScene } from './components/VoiceScene';
+import { PersonalMemory } from './components/PersonalMemory';
+import { personalRequest, personalSnapshot } from './lib/personal';
+import type { PersonalSnapshot } from '../shared/contracts';
 import { AIConnection } from './components/AIConnection';
 import { SearchSources } from './components/SearchSources';
 import { SearchToggle } from './components/SearchToggle';
@@ -21,10 +24,12 @@ const commands = [
   { icon: NotebookPen, title: 'Guardar uma nota', command: 'anotar ', detail: 'Suas ideias, organizadas' },
   { icon: Cpu, title: 'Fazer um cálculo', command: 'calcular ', detail: 'Números sem complicação' },
 ];
-type Modal = 'help' | 'settings' | 'clear' | 'history' | null;
+type Modal = 'help' | 'settings' | 'clear' | 'history' | 'memory' | null;
 
-export default function App() {
-  const [messages, setMessages] = useState<Message[]>(() => { const stored = loadHistory(); return stored.length ? stored : [welcome()]; });
+export default function App({ personal, onLock }: { personal?: PersonalSnapshot; onLock?: () => void } = {}) {
+  const [personalData, setPersonalData] = useState(personal);
+  const refreshSequence = useRef(0);
+  const [messages, setMessages] = useState<Message[]>(() => { const stored = personal?.history ?? loadHistory(); return stored.length ? stored : [welcome()]; });
   const [sessionId] = useState(loadSession);
   const [view, setView] = useState(loadView);
   const [continuous, setContinuous] = useState(false);
@@ -86,12 +91,12 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
+      if (!personal) localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
       localStorage.setItem('jarvis.voice.v1', String(autoVoice));
       localStorage.setItem('jarvis.view.v1', view);
       setStorageError(false);
     } catch { setStorageError(true); }
-  }, [messages, autoVoice, view]);
+  }, [messages, autoVoice, view, personal]);
   useEffect(() => {
     let mounted = true;
     let request: AbortController | undefined;
@@ -151,6 +156,28 @@ export default function App() {
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
     };
   }, []);
+  const refreshPersonal = useCallback(async () => {
+    if (!personal) return;
+    const sequence = ++refreshSequence.current;
+    const data = await personalSnapshot();
+    if (sequence !== refreshSequence.current || sending.current) return;
+    setPersonalData(data);
+    setMessages(data.history.length ? data.history : [welcome()]);
+  }, [personal]);
+  useEffect(() => {
+    if (!personal) return;
+    const refresh = () => { if (!document.hidden && !sending.current) void refreshPersonal().catch(() => setNotice('Sem sincronização no momento. Seus dados salvos continuam no servidor.')); };
+    const timer = setInterval(refresh, 10_000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => { ++refreshSequence.current; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); window.removeEventListener('focus', refresh); };
+  }, [personal, refreshPersonal]);
+  const logout = async () => { interrupt(''); await personalRequest('logout', 'POST'); onLock?.(); };
+  const clearConversation = async () => {
+    interrupt('');
+    try { if (personal) await personalRequest('history', 'DELETE'); setMessages([welcome()]); setError(''); shouldScroll.current = true; closeModal(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível limpar a conversa.'); }
+  };
   const startVoice = () => {
     if (document.hidden || sending.current || voice.phase !== 'idle') return;
     output.stop();
@@ -172,6 +199,7 @@ export default function App() {
     const current = new AbortController();
     request.current = current;
     sending.current = true;
+    ++refreshSequence.current;
     setPending(true);
     setError('');
     setNotice('');
@@ -187,6 +215,8 @@ export default function App() {
       setHealth('online');
       sending.current = false;
       setPending(false);
+      if (personal) await refreshPersonal().catch(() => setNotice('Resposta recebida. A sincronização será tentada novamente.'));
+      if (token !== turn.current) return;
       const inVoice = viewRef.current === 'voice';
       if (inVoice ? soundRef.current : autoVoice) {
         const outcome = await output.speak(response.message);
@@ -307,7 +337,7 @@ export default function App() {
         </section>
 
         <aside className="insights" aria-label="Informações do sistema">
-          <section className="info-panel"><div className="panel-title"><Activity size={16} /><h2>Status do sistema</h2><span className="panel-dot" /></div><div className="system-visual"><div className="system-chip"><Cpu size={25} /></div><div><strong>JARVIS Core</strong><span>Motor de comandos · v0.1</span></div></div><dl className="status-list"><div><dt>{BROWSER_MODE ? 'Execução' : 'Servidor'}</dt><dd className={health === 'online' ? 'status-good' : ''}>{health === 'online' ? <><span /> {BROWSER_MODE ? 'Neste navegador' : 'Conectado'}</> : health === 'checking' ? 'Verificando' : 'Indisponível'}</dd></div><div><dt>Processamento</dt><dd>{model ? 'IA + comandos' : 'Comandos locais'}</dd></div><div><dt>Histórico</dt><dd>{storageError ? 'Não persistido' : 'No navegador'}</dd></div><div><dt>Modelo de IA</dt><dd className="muted">{modelStatus}</dd></div></dl><div className="system-footnote"><ShieldCheck size={13} /> Credenciais do modelo ficam no servidor</div></section>
+          <section className="info-panel"><div className="panel-title"><Activity size={16} /><h2>Status do sistema</h2><span className="panel-dot" /></div><div className="system-visual"><div className="system-chip"><Cpu size={25} /></div><div><strong>JARVIS Core</strong><span>Motor de comandos · v0.1</span></div></div><dl className="status-list"><div><dt>{BROWSER_MODE ? 'Execução' : 'Servidor'}</dt><dd className={health === 'online' ? 'status-good' : ''}>{health === 'online' ? <><span /> {BROWSER_MODE ? 'Neste navegador' : 'Conectado'}</> : health === 'checking' ? 'Verificando' : 'Indisponível'}</dd></div><div><dt>Processamento</dt><dd>{model ? 'IA + comandos' : 'Comandos locais'}</dd></div><div><dt>Histórico</dt><dd>{personal ? 'Na sua conta' : storageError ? 'Não persistido' : 'No navegador'}</dd></div><div><dt>Modelo de IA</dt><dd className="muted">{modelStatus}</dd></div></dl><div className="system-footnote"><ShieldCheck size={13} /> Credenciais do modelo ficam no servidor</div></section>
           <section className="info-panel voice-panel"><div className="panel-title"><AudioLines size={16} /><h2>Voz & interação</h2></div><div className="capability"><span className="capability-icon"><Mic size={16} /></span><div><strong>Reconhecimento</strong><span>{voice.canRecognize && voice.canRecord ? 'Disponível no navegador' : 'Use a digitação'}</span></div>{voice.canRecognize && voice.canRecord ? <Check size={15} className="capability-check" /> : <Keyboard size={15} className="muted" />}</div><div className="capability"><span className="capability-icon"><Volume2 size={16} /></span><div><strong>Respostas faladas</strong><span>{output.supported ? autoVoice ? 'Leitura automática ativa' : 'Toque em “Ouvir”' : 'Não suportadas'}</span></div><button data-gamepad className="icon-button" disabled={!output.supported} aria-label={output.speaking ? 'Parar leitura' : 'Configurar respostas faladas'} onClick={() => output.speaking ? output.stop() : setModal('settings')}>{output.speaking ? <VolumeX size={16} /> : <Settings2 size={15} />}</button></div><div className="capability"><span className="capability-icon"><Gamepad2 size={16} /></span><div><strong>Controle & teclado</strong><span>{controller ? 'Controle detectado · A para ativar' : 'Tab para navegar · Enter para ativar'}</span></div></div><p className="panel-note">A voz depende das permissões e dos recursos do seu navegador.</p></section>
           <section className="tip-card"><span className="tip-icon"><Sparkles size={18} /></span><span className="eyebrow">UMA IDEIA PARA COMEÇAR</span><h2>Tire da cabeça.<br />Guarde aqui.</h2><p>Uma ideia boa merece uma nota. O JARVIS guarda para você.</p><button data-gamepad disabled={pending || voice.phase !== 'idle'} onClick={() => chooseCommand('anotar ')}>Criar minha primeira nota <ChevronRight size={15} /></button><div className="tip-orbit" aria-hidden="true" /></section>
           <button data-gamepad className="help-link" onClick={() => setModal('help')}><CircleHelp size={15} /> Conheça os comandos <ArrowRight size={14} /></button>
@@ -316,11 +346,12 @@ export default function App() {
     </main>
     </>}
 
-    {modal && <Dialog key={modal} title={modal === 'help' ? 'O que o JARVIS pode fazer' : modal === 'settings' ? 'Seu assistente, do seu jeito' : modal === 'history' ? 'Histórico da conversa' : 'Limpar esta conversa?'} onClose={closeModal}>
-      {modal === 'help' && <><p className="modal-description">{model ? 'Faça perguntas e peça ajuda com textos e estudos. Para notas e cálculos, use os comandos abaixo.' : 'Os comandos abaixo já funcionam. A conversa com IA exige um backend e um modelo configurados em Preferências.'}</p><div className="command-list">{[['hora', 'Consultar o horário'], ['data', 'Ver a data de hoje'], ['calcular (12 + 8) / 2', 'Calcular uma expressão'], ['pesquise ', 'Pesquisar na web com fontes'], ['anotar ', BROWSER_MODE ? 'Guardar uma nota neste navegador' : 'Guardar uma nota no SQLite'], ['notas', 'Ler suas notas'], ['apagar notas', 'Excluir todas as suas notas']].map(([command, label]) => <button data-gamepad key={command} disabled={pending || voice.phase !== 'idle'} onClick={() => { closeModal(); chooseCommand(command); }}><span><strong>{label}</strong><code>{command === 'anotar ' ? 'anotar comprar leite' : command === 'pesquise ' ? 'pesquise notícias de tecnologia' : command}</code></span><ArrowRight size={17} /></button>)}</div><p className="privacy-note">{BROWSER_MODE ? '“Apagar notas” exclui as notas deste navegador. Limpar a conversa preserva as notas. Elas não são sincronizadas entre dispositivos.' : '“Apagar notas” exclui as notas da sua sessão. Elas ficam no servidor e não são removidas ao limpar a conversa. Não use este MVP para informações sensíveis em um servidor público.'}</p></>}
-      {modal === 'settings' && <><p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente no chat</strong><small>{output.supported ? 'Usa as vozes disponíveis no navegador.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><label className="voice-selection"><span>Voz do assistente</span><select data-gamepad aria-label="Voz do assistente" disabled={!output.supported || !output.voices.length} value={output.voiceUri} onChange={event => output.chooseVoice(event.target.value)}><option value="">Automática · português quando disponível</option>{output.voices.map(item => <option key={item.voiceURI} value={item.voiceURI}>{item.name} ({item.lang})</option>)}</select><small>As vozes são fornecidas pelo seu navegador e dispositivo.</small></label>{BROWSER_MODE ? <AIConnection onChange={() => { interrupt(''); setBackendRevision(previous => previous + 1); }} /> : <p className="privacy-note">{modelStatus}. O modelo é configurado no servidor. Mensagens recentes acompanham perguntas à IA; a chave fica no backend.</p>}<div className="settings-detail"><ShieldCheck size={19} /><div><strong>Histórico no navegador</strong><p>{BROWSER_MODE ? 'Histórico e notas ficam neste navegador. Notas e cálculos são processados aqui. Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente ao servidor e ao provedor. Pesquisas enviam o assunto ao buscador; trechos dos resultados podem acompanhar o resumo por IA. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa e o contexto recente são enviados ao backend para responder, e ao provedor quando usa IA. O backend não armazena as mensagens. Notas são persistidas em SQLite por sessão. Pesquisas enviam o assunto ao buscador e os trechos ao modelo para o resumo.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>O microfone só é ativado após seu clique e permissão. No modo chat, o áudio gravado fica temporariamente neste navegador. No modo voz, apenas a transcrição entra no histórico. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
-      {modal === 'history' && <><p className="modal-description">Suas conversas neste navegador. Você também pode continuar pelo modo chat.</p><div className="history-log" role="log" aria-label="Histórico de mensagens" tabIndex={0}>{messages.map(message => <article className={`message message-${message.role}`} key={message.id}><span className={`message-avatar ${message.role === 'assistant' ? 'jarvis-avatar' : ''}`} aria-hidden="true">{message.role === 'assistant' ? 'J' : 'U'}</span><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong><time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p><SearchSources sources={message.sources} info={message.webSearch} /></div></article>)}</div><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={() => setModal('clear')}>Limpar conversa</button><button data-gamepad className="primary-button" onClick={() => { closeModal(); changeView('chat'); }}>Abrir modo chat</button></div></>}
-      {modal === 'clear' && <><p className="modal-description">As mensagens serão removidas do histórico deste navegador. {BROWSER_MODE ? 'Suas notas neste navegador serão preservadas.' : 'Suas notas no servidor serão preservadas.'}</p><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={closeModal}>Cancelar</button><button data-gamepad className="primary-button" onClick={() => { output.stop(); setMessages([welcome()]); setError(''); shouldScroll.current = true; closeModal(); }}>Limpar conversa</button></div></>}
+    {modal && <Dialog key={modal} title={modal === 'help' ? 'O que o JARVIS pode fazer' : modal === 'settings' ? 'Seu assistente, do seu jeito' : modal === 'history' ? 'Histórico da conversa' : modal === 'memory' ? 'Memória pessoal' : 'Limpar esta conversa?'} onClose={closeModal}>
+      {modal === 'help' && <><p className="modal-description">{model ? 'Faça perguntas e peça ajuda com textos e estudos. Para notas e cálculos, use os comandos abaixo.' : 'Os comandos abaixo já funcionam. A conversa com IA exige um backend e um modelo configurados em Preferências.'}</p><div className="command-list">{[['hora', 'Consultar o horário'], ['data', 'Ver a data de hoje'], ['calcular (12 + 8) / 2', 'Calcular uma expressão'], ['pesquise ', 'Pesquisar na web com fontes'], ['anotar ', personal ? 'Guardar uma nota na sua conta' : BROWSER_MODE ? 'Guardar uma nota neste navegador' : 'Guardar uma nota no SQLite'], ...(personal ? [['lembre que ', 'Salvar uma preferência pessoal'], ['minhas memórias', 'Consultar memórias salvas']] : []), ['notas', 'Ler suas notas'], ['apagar notas', 'Excluir todas as suas notas']].map(([command, label]) => <button data-gamepad key={command} disabled={pending || voice.phase !== 'idle'} onClick={() => { closeModal(); chooseCommand(command); }}><span><strong>{label}</strong><code>{command === 'anotar ' ? 'anotar comprar leite' : command === 'pesquise ' ? 'pesquise notícias de tecnologia' : command}</code></span><ArrowRight size={17} /></button>)}</div><p className="privacy-note">{personal ? '“Apagar notas” remove as notas da conta. Limpar o histórico preserva notas e memórias.' : BROWSER_MODE ? '“Apagar notas” exclui as notas deste navegador. Limpar a conversa preserva as notas. Elas não são sincronizadas entre dispositivos.' : '“Apagar notas” exclui as notas da sua sessão. Elas ficam no servidor e não são removidas ao limpar a conversa. Não use este MVP para informações sensíveis em um servidor público.'}</p></>}
+      {modal === 'memory' && personalData && <PersonalMemory snapshot={personalData} onRefresh={refreshPersonal} onLogout={logout} />}
+      {modal === 'settings' && <>{personal && <button data-gamepad className="primary-button" onClick={() => setModal('memory')}>Memória pessoal</button>}<p className="modal-description">Texto sempre disponível. Áudio quando você escolher.</p><label className="setting-row"><span><strong>Ler respostas automaticamente no chat</strong><small>{output.supported ? 'Usa as vozes disponíveis no navegador.' : 'Síntese de voz indisponível neste navegador.'}</small></span><input data-gamepad type="checkbox" disabled={!output.supported} checked={autoVoice} onChange={event => { setAutoVoice(event.target.checked); if (!event.target.checked) output.stop(); }} /></label><label className="voice-selection"><span>Voz do assistente</span><select data-gamepad aria-label="Voz do assistente" disabled={!output.supported || !output.voices.length} value={output.voiceUri} onChange={event => output.chooseVoice(event.target.value)}><option value="">Automática · português quando disponível</option>{output.voices.map(item => <option key={item.voiceURI} value={item.voiceURI}>{item.name} ({item.lang})</option>)}</select><small>As vozes são fornecidas pelo seu navegador e dispositivo.</small></label>{BROWSER_MODE ? <AIConnection onChange={() => { interrupt(''); setBackendRevision(previous => previous + 1); }} /> : <p className="privacy-note">{modelStatus}. O modelo é configurado no servidor. Mensagens recentes acompanham perguntas à IA; a chave fica no backend.</p>}<div className="settings-detail"><ShieldCheck size={19} /><div><strong>{personal ? 'Histórico na sua conta' : 'Histórico no navegador'}</strong><p>{personal ? 'Até 100 mensagens, notas e preferências ficam no servidor e aparecem nos aparelhos conectados à sua conta. As memórias salvas podem ser enviadas à IA junto com perguntas. Você pode apagá-las em Memória pessoal.' : BROWSER_MODE ? 'Histórico e notas ficam neste navegador. Notas e cálculos são processados aqui. Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente ao servidor e ao provedor. Pesquisas enviam o assunto ao buscador; trechos dos resultados podem acompanhar o resumo por IA. Até 100 mensagens e 100 notas são mantidas.' : 'Até 100 mensagens são salvas neste dispositivo. A conversa e o contexto recente são enviados ao backend para responder, e ao provedor quando usa IA. O backend não armazena as mensagens. Notas são persistidas em SQLite por sessão. Pesquisas enviam o assunto ao buscador e os trechos ao modelo para o resumo.'}</p></div></div><div className="settings-detail"><Mic size={19} /><div><strong>Você controla o microfone</strong><p>O microfone só é ativado após seu clique e permissão. No modo chat, o áudio gravado fica temporariamente neste navegador. No modo voz, apenas a transcrição entra no histórico. O reconhecimento de voz pode usar serviços externos do próprio navegador; confira sua política de privacidade.</p></div></div><div className="settings-detail"><Gamepad2 size={19} /><div><strong>Navegação acessível</strong><p>Use Tab e Shift + Tab, ou o direcional de um controle padrão. A ativa o item; B fecha esta janela. A digitação no Xbox depende do teclado virtual do Edge.</p></div></div><p className="privacy-note">Animações respeitam a preferência de movimento reduzido do sistema. O MVP não controla seu sistema operacional.</p></>}
+      {modal === 'history' && <><p className="modal-description">{personal ? 'Suas conversas sincronizadas com a conta. Você pode continuar em outro aparelho.' : 'Suas conversas neste navegador. Você também pode continuar pelo modo chat.'}</p><div className="history-log" role="log" aria-label="Histórico de mensagens" tabIndex={0}>{messages.map(message => <article className={`message message-${message.role}`} key={message.id}><span className={`message-avatar ${message.role === 'assistant' ? 'jarvis-avatar' : ''}`} aria-hidden="true">{message.role === 'assistant' ? 'J' : 'U'}</span><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'JARVIS' : 'Você'}</strong><time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time></div><p>{message.content}</p><SearchSources sources={message.sources} info={message.webSearch} /></div></article>)}</div><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={() => setModal('clear')}>Limpar conversa</button><button data-gamepad className="primary-button" onClick={() => { closeModal(); changeView('chat'); }}>Abrir modo chat</button></div></>}
+      {modal === 'clear' && <><p className="modal-description">{personal ? 'As mensagens serão removidas da conta e dos aparelhos na próxima sincronização.' : 'As mensagens serão removidas do histórico deste navegador.'} {BROWSER_MODE ? 'Suas notas neste navegador serão preservadas.' : 'Suas notas no servidor serão preservadas.'}</p><div className="dialog-actions"><button data-gamepad className="secondary-button" onClick={closeModal}>Cancelar</button><button data-gamepad className="primary-button" onClick={() => void clearConversation()}>Limpar conversa</button></div></>}
     </Dialog>}
   </div>;
 }

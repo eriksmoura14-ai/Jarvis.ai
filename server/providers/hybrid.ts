@@ -7,7 +7,7 @@ export class HybridProvider implements AssistantProvider {
   readonly name: 'groq' | 'ollama';
   private active = 0;
   private requests: number[] = [];
-  constructor(private local: LocalProvider, readonly model: ModelProvider, private claimDailyRequest: (day: string) => boolean) { this.name = model.name; }
+  constructor(private local: LocalProvider, readonly model: ModelProvider, private claimDailyRequest: (day: string) => boolean | Promise<boolean>) { this.name = model.name; }
   async respond(request: ChatRequest, signal?: AbortSignal) {
     const local = await this.local.respond(request);
     if (local.command !== 'unknown') {
@@ -24,10 +24,12 @@ export class HybridProvider implements AssistantProvider {
     const now = Date.now();
     this.requests = this.requests.filter(time => now - time < 60_000);
     if (this.active >= 2 || this.requests.length >= 6) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
-    if (!this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
     this.requests.push(now);
     this.active++;
-    try { return await this.model.respond(request, signal, research); }
+    try {
+      if (!await this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
+      return await this.model.respond(request, signal, research);
+    }
     finally { this.active--; }
   }
 }

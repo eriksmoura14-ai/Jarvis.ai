@@ -1,7 +1,9 @@
 import { buildApp } from './app.js';
 import { readAIConfig } from './providers/model.js';
+import { readPersonalConfig } from './personal/auth.js';
 
 const app = await buildApp({ logger: true, serveWeb: true, ai: readAIConfig(process.env),
+  personal: readPersonalConfig(process.env),
   aiDailyLimit: Number(process.env.AI_DAILY_LIMIT ?? 100),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean),
 });

@@ -30,13 +30,13 @@ export class LocalProvider implements AssistantProvider {
       catch (error) { return reply(error instanceof Error ? error.message : 'Não consegui calcular.', 'calculate'); }
     }
     const note = input.match(/^(?:anotar|anote|nota)\s+(.+)$/is);
-    if (note) return reply(this.notes.add(sessionId, note[1].trim()) ? `Nota salva: ${note[1].trim()}` : 'Você atingiu o limite de 100 notas. Use “apagar notas” para liberar espaço.', 'note-add');
+    if (note) return reply(await this.notes.add(sessionId, note[1].trim()) ? `Nota salva: ${note[1].trim()}` : 'Você atingiu o limite de 100 notas. Use “apagar notas” para liberar espaço.', 'note-add');
     if (/^(notas|minhas notas|listar notas)$/.test(normalized)) {
-      const notes = this.notes.list(sessionId);
+      const notes = await this.notes.list(sessionId);
       return reply(notes.length ? `Suas notas:\n\n${notes.map((entry, i) => `${i + 1}. ${entry.content}`).join('\n')}` : 'Você ainda não tem notas. Experimente “anotar comprar leite”.', 'note-list');
     }
     if (normalized === 'apagar notas') {
-      const count = this.notes.clear(sessionId);
+      const count = await this.notes.clear(sessionId);
       return reply(`${count} nota${count === 1 ? '' : 's'} excluída${count === 1 ? '' : 's'}.`, 'note-clear');
     }
     return reply('Ainda não entendo esse pedido. Nesta versão, uso comandos locais e não um modelo de IA. Digite “ajuda” para ver o que posso fazer.', 'unknown');

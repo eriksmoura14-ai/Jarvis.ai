@@ -2,6 +2,8 @@
 
 Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS. React, TypeScript, Vite, Tailwind CSS, Fastify e SQLite. Sem API paga, cartão de crédito ou credenciais no frontend.
 
+**Uso pessoal com login:** [ativar senha, memória e sincronização no Render com Supabase](docs/personal.md). A implementação está disponível; o acesso só fica protegido depois de configurar `JARVIS_PASSWORD`.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
 **Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; o modelo não executa ações.
@@ -34,6 +36,7 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm run test:pages` | Testes desktop/celular sem API para a build Pages |
 | `npm start` | Servir a aplicação compilada e a API na porta 3001 |
 | `npm run test:e2e` | Testes de navegador em desktop e celular |
+| `npm run test:personal` | Login, memórias e sincronização com SQLite em desktop/celular |
 | `npm run check` | Testes, build e testes de navegador |
 
 `npm start` exige `npm run build` e deve ser executado na raiz do projeto. Fastify serve `dist/` e `/api` na mesma origem. Para testar essa versão com Playwright, execute `E2E_PRODUCTION=1 npm run test:e2e` em Bash, após o build. No PowerShell: `$env:E2E_PRODUCTION='1'; npm run test:e2e`.
@@ -77,7 +80,8 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Tela inicial de voz com núcleo central, estados de escuta/processamento/fala, última resposta visível e histórico recolhido. Botão **Chat** abre a interface completa; a escolha de tela permanece ao recarregar.
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
-- Histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
+- Modo opcional para um único dono: login por senha, sessões revogáveis, memória salva por pedido explícito, exclusão individual, histórico/notas sincronizados e importação consentida de mensagens antigas. SQLite local ou Supabase para persistir no Render; [configuração](docs/personal.md).
+- Sem login configurado, histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
 - Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
 - Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, sem escutar a própria voz. Cada escuta tem limite de 60 segundos.
 - Modo chat: captura com `getUserMedia` e `MediaRecorder`, mediante ação e permissão, reprodução local e descarte. A transcrição entra no campo para revisão, **sem envio automático** neste modo.
@@ -138,10 +142,13 @@ server/
     hybrid.ts             Prioridade local e limites de IA
     research.ts           Pesquisa explícita e resumo com fontes
   search.ts               DuckDuckGo HTML / Bing RSS, limites e extração
+  personal/               Login, sessões, comandos de memória e SQLite/Supabase
 shared/contracts.ts       Tipos de mensagem e contratos HTTP
 shared/context.ts         Seleção limitada do contexto recente
 shared/search.ts          Comandos de pesquisa e validação de fontes
+supabase/personal.sql     Tabela privada com RLS para o dono
 e2e/                      Testes Playwright
+e2e-personal/             Login, memória e sincronização em navegador
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
@@ -151,13 +158,15 @@ Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando 
 
 ### Dados e privacidade
 
-Os parágrafos abaixo descrevem o **modo servidor**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
+No **modo pessoal autenticado**, histórico, notas, memórias explícitas, sessões e orçamento de IA ficam no backend SQLite/Supabase. O histórico pessoal não é gravado no localStorage; somente preferências de interface/voz permanecem locais. As memórias podem acompanhar perguntas à IA. Consulte [dados, exclusão e ativação](docs/personal.md). Não há migração automática nem backup próprio.
+
+Os parágrafos abaixo descrevem o **modo servidor sem login configurado**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
 
 O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem é enviada ao backend para responder, mas o backend não persiste a conversa. Logs padrão de requisição não incluem o corpo da mensagem. Quando a IA está ativada, o provedor recebe a pergunta e até 10 mensagens recentes (máximo de 8.000 caracteres de contexto); consulte sua política de retenção. Pesquisas enviam o assunto ao buscador; os trechos também acompanham o resumo por IA. A tabela `ai_usage` mantém apenas contagens diárias, não o texto da conversa.
 
 As **notas** ficam em `data/jarvis.sqlite`, incluindo os arquivos de WAL do SQLite, e pertencem ao UUID guardado em `jarvis.session.v1`. Copiar esse UUID possibilita acessar as notas da sessão: ele não substitui autenticação. Limpar os dados do site ou usar outro navegador cria outra sessão, sem recuperar as notas anteriores. Para removê-las antes de limpar o site, use `apagar notas`.
 
-Não há contas, autenticação, criptografia de notas, sincronização entre dispositivos ou backup automático. Use como MVP em máquina/rede confiável; adicione autenticação e proteção de dados antes de expor a API em produção pública. Limites: 2.000 caracteres por mensagem, 100 notas por sessão, 100 mensagens locais e 60 requisições de chat por minuto/IP.
+Sem `JARVIS_PASSWORD`, não há autenticação nem sincronização entre dispositivos. Nenhum modo oferece criptografia adicional de ponta a ponta ou backup automático. Use como MVP em máquina/rede confiável; adicione autenticação e proteção de dados antes de expor a API em produção pública. Limites: 2.000 caracteres por mensagem, 100 notas por sessão, 100 mensagens locais e 60 requisições de chat por minuto/IP.
 
 ## Áudio nos navegadores
 
@@ -194,6 +203,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 
 ### Checklist manual no Xbox
 
+- [ ] No modo pessoal, entrar pelo teclado virtual, testar direcional/A/B no login e nas memórias e verificar persistência da sessão.
 - [ ] Abrir pelo Edge do console na rede confiável; verificar legibilidade na TV, zoom e margens visíveis.
 - [ ] Navegar por todos os controles com direcional/teclado; confirmar foco visível, A, B, rolagem e diálogo. O Edge pode mapear os botões de forma diferente ou não expor Gamepad API.
 - [ ] Ativar o teclado virtual, enviar com o botão, editar texto longo e testar Shift+Enter com teclado físico.
@@ -207,7 +217,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 ## Próximos passos
 
 1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
-2. Acrescentar autenticação, gestão de sessões, exclusão individual e backup/exportação de notas.
+2. Ativar e validar o modo pessoal com Supabase no seu serviço; acrescentar backup/exportação e exclusão individual de notas.
 3. Acrescentar execução de ferramentas por solicitações estruturadas do modelo, com validação e confirmação para ações que excluam dados; atualmente só comandos explícitos executam funções.
 4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
