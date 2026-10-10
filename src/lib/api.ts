@@ -50,5 +50,6 @@ export async function checkBackend(endpoint: string, signal: AbortSignal): Promi
   const data = await response.json() as HealthResponse;
   if (data.status !== 'ok' || !['local', 'groq', 'ollama'].includes(data.provider)) throw new Error('Este endereço não corresponde a um backend JARVIS válido.');
   if (data.ai && (data.ai.configured !== true || !['groq', 'ollama'].includes(data.ai.provider) || typeof data.ai.model !== 'string')) throw new Error('O backend retornou uma configuração de IA inválida.');
+  if (data.speech && (data.speech.configured !== true || data.speech.provider !== 'elevenlabs')) throw new Error('O backend retornou uma configuração de voz inválida.');
   return data;
 }

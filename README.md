@@ -4,6 +4,8 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Uso pessoal com login:** [ativar senha, memória e sincronização no Render com Supabase](docs/personal.md). A implementação está disponível; o acesso só fica protegido depois de configurar `JARVIS_PASSWORD`.
 
+**Voz mais natural:** [ativar ElevenLabs no plano Free](docs/voice.md), com chave somente no backend, teste de voz e alternativa para a voz do aparelho. Precisa de conta, chave e voz configuradas; a voz padrão continua sem credenciais.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
 **Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; o modelo não executa ações.
@@ -175,7 +177,8 @@ Sem `JARVIS_PASSWORD`, não há autenticação nem sincronização entre disposi
 - `SpeechRecognition`/`webkitSpeechRecognition` variam por navegador, dispositivo, idioma e política. Chrome/Edge podem usar um serviço externo de reconhecimento, que pode exigir rede e enviar áudio ao fornecedor do navegador. A existência da API não garante funcionamento. Não há promessa de transcrição offline.
 - Quando reconhecimento não está disponível, o modo voz mostra a digitação; no chat, a captura pode permitir apenas ouvir a própria gravação. No chat, revise a transcrição e clique em enviar. No modo voz, a transcrição final é enviada automaticamente: comandos como `apagar notas` executam ao concluir a fala.
 - `speechSynthesis` depende das vozes instaladas, idioma e regras de reprodução do navegador. Algumas plataformas exigem um gesto para tocar áudio e podem bloquear leitura automática; o botão “Ouvir” continua sendo uma tentativa explícita. Texto sempre permanece disponível. Leituras são limitadas aos primeiros 4.000 caracteres.
-- Conversa contínua é por turnos e não permite falar por cima da resposta: primeiro interrompa com o botão central. Erros de reconhecimento/voz e troca de aplicativo desativam a repetição. iOS/Android podem exigir outro toque para cada escuta ou bloquear reprodução; não há escuta com tela bloqueada ou em segundo plano. Não usa ElevenLabs; a voz depende das opções do navegador/sistema e não imita a voz do personagem.
+- A integração opcional com ElevenLabs usa a rota autenticada `/api/speech`, verifica plano Free/cota antes de gerar MP3 e mantém a voz do aparelho como alternativa. O texto lido é enviado ao provedor; não há envio de gravação do microfone para essa integração. Leituras por IA têm até 1.200 caracteres. Consulte [ativação, privacidade e limites](docs/voice.md).
+- Conversa contínua é por turnos e não permite falar por cima da resposta: primeiro interrompa com o botão central. Erros de reconhecimento/voz e troca de aplicativo desativam a repetição. iOS/Android podem exigir outro toque para cada escuta ou bloquear reprodução; não há escuta com tela bloqueada ou em segundo plano. A escolha de voz depende do navegador/sistema ou da configuração do ElevenLabs; não imita automaticamente a voz do personagem.
 - No Xbox, entrada/saída de áudio, reconhecimento, permissões, teclado virtual e exposição da Gamepad API precisam ser confirmados no Edge do console. O MVP não promete suporte de voz nesse dispositivo.
 
 ## Testes

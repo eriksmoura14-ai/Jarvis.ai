@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { requestSpeech, SpeechRequestError } from '../lib/speech';
+import { speechText } from '../../shared/speech';
 
 interface RecognitionEvent {
   resultIndex: number;
@@ -178,7 +180,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
 }
 
 export type SpeechOutcome = 'ended' | 'canceled' | 'error' | 'unavailable';
-export function useSpeechOutput() {
+function useNativeSpeechOutput() {
   const supported = typeof window.speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
   const [speaking, setSpeaking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -196,6 +198,7 @@ export function useSpeechOutput() {
     finish.current = null;
     currentUtterance.current = null;
     if (supported) window.speechSynthesis.cancel();
+    setError('');
     setSpeaking(false);
     setBusy(false);
   }, [supported]);
@@ -261,4 +264,101 @@ export function useSpeechOutput() {
     try { localStorage.setItem('jarvis.speech-voice.v1', uri); } catch { /* Preference remains valid for this session. */ }
   };
   return { supported, speaking, busy, error, voices, voiceUri, chooseVoice, speak, stop };
+}
+
+type SpeechEngine = 'auto' | 'browser';
+export function useSpeechOutput(cloudAvailable = false) {
+  const native = useNativeSpeechOutput();
+  const [engine, setEngine] = useState<SpeechEngine>(() => {
+    try { return localStorage.getItem('jarvis.speech-engine.v1') === 'browser' ? 'browser' : 'auto'; } catch { return 'auto'; }
+  });
+  const [busy, setBusy] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const generation = useRef(0);
+  const request = useRef<AbortController | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const objectUrl = useRef('');
+  const finish = useRef<((outcome: SpeechOutcome) => void) | null>(null);
+  // Retain just the last generated clip in memory for explicit replay on phones.
+  const cached = useRef<{ text: string; blob: Blob } | null>(null);
+  const stop = useCallback(() => {
+    generation.current++;
+    finish.current?.('canceled');
+    finish.current = null;
+    request.current?.abort(); request.current = null;
+    if (audio.current) {
+      audio.current.onplaying = null; audio.current.onended = null; audio.current.onerror = null;
+      audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null;
+    }
+    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    objectUrl.current = '';
+    native.stop(); setBusy(false); setSpeaking(false);
+  }, [native.stop]);
+  const speak = useCallback(async (text: string): Promise<SpeechOutcome> => {
+    stop(); setError(''); setNotice('');
+    if (!cloudAvailable || engine === 'browser') return native.speak(text);
+    const prose = speechText(text);
+    if (!prose) return native.speak(text);
+    const token = ++generation.current;
+    const controller = new AbortController(); request.current = controller;
+    setBusy(true);
+    let providerFailed = false;
+    const outcome = await new Promise<SpeechOutcome>(resolve => {
+      let timer: ReturnType<typeof setTimeout>;
+      const complete = (value: SpeechOutcome) => {
+        clearTimeout(timer);
+        if (token === generation.current) {
+          finish.current = null; request.current = null; setBusy(false); setSpeaking(false);
+          if (audio.current) { audio.current.onplaying = null; audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null; }
+          if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+          objectUrl.current = '';
+        }
+        resolve(value);
+      };
+      finish.current = complete;
+      const playbackFailed = () => {
+        if (token !== generation.current) return;
+        setError('A voz não foi reproduzida. Toque em “Ouvir resposta” ou “Testar voz” para tentar novamente.');
+        complete('error');
+      };
+      const run = async () => {
+        let blob: Blob;
+        try {
+          blob = cached.current?.text === prose ? cached.current.blob : await requestSpeech(prose, controller.signal);
+        } catch (cause) {
+          if (token !== generation.current) return;
+          if (cause instanceof SpeechRequestError && cause.status === 401) { complete('canceled'); return; }
+          providerFailed = true;
+          setNotice(`${cause instanceof SpeechRequestError ? cause.message : 'A voz por IA está indisponível.'} ${native.supported ? 'Usando a voz do aparelho.' : 'Continue pelo texto.'}`);
+          complete('error'); return;
+        }
+        if (token !== generation.current) return;
+        cached.current = { text: prose, blob };
+        clearTimeout(timer);
+        objectUrl.current = URL.createObjectURL(blob);
+        const player = new Audio(objectUrl.current); audio.current = player;
+        player.onplaying = () => {
+          if (token !== generation.current) return;
+          setSpeaking(true); clearTimeout(timer); timer = setTimeout(playbackFailed, 360_000);
+        };
+        player.onended = () => { if (token === generation.current) complete('ended'); };
+        player.onerror = playbackFailed;
+        timer = setTimeout(playbackFailed, 8000);
+        try { await player.play(); } catch { playbackFailed(); }
+      };
+      timer = setTimeout(() => controller.abort(), 25_000);
+      void run().catch(() => playbackFailed());
+    });
+    if (token !== generation.current) return 'canceled';
+    return providerFailed && native.supported ? native.speak(text) : outcome;
+  }, [cloudAvailable, engine, native.speak, native.supported, stop]);
+  const chooseEngine = (value: SpeechEngine) => {
+    stop(); setEngine(value); setError(''); setNotice('');
+    try { localStorage.setItem('jarvis.speech-engine.v1', value); } catch { /* Session preference still works. */ }
+  };
+  useEffect(() => () => { stop(); cached.current = null; }, [stop]);
+  return { ...native, supported: native.supported || cloudAvailable, busy: busy || native.busy,
+    speaking: speaking || native.speaking, error: error || native.error, notice, engine, chooseEngine, cloudAvailable, speak, stop };
 }

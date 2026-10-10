@@ -17,14 +17,18 @@ import { validSources, validSearchInfo } from '../shared/search.js';
 import { PersonalAuth, type PersonalConfig } from './personal/auth.js';
 import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type DocumentBackend } from './personal/store.js';
 import { memoryCommand } from './personal/commands.js';
+import { SpeechError, SpeechProvider, type SpeechConfig } from './speech.js';
+import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
   ai?: AIConfig; modelFetch?: typeof fetch; aiDailyLimit?: number; allowedOrigins?: string[];
   searchFetch?: typeof fetch;
   personal?: PersonalConfig; personalBackend?: DocumentBackend;
+  speech?: SpeechConfig; speechFetch?: typeof fetch;
 }
 export async function buildApp(options: AppOptions = {}) {
+  if (options.speech && !options.personal) throw new Error('A voz por IA exige o modo pessoal com senha.');
   const allowedOrigins = new Set((options.allowedOrigins ?? []).map(value => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol) || url.origin !== value) throw new Error('ALLOWED_ORIGINS deve conter origens completas, sem caminho ou barra final.');
@@ -40,6 +44,7 @@ export async function buildApp(options: AppOptions = {}) {
   const local = new LocalProvider(personal ?? store);
   const provider = options.provider ?? (options.ai ? new HybridProvider(local, new ModelProvider(options.ai, options.modelFetch), day => (personal ?? store).claimAIRequest(day, dailyLimit)) : local);
   const assistant = new ResearchProvider(provider, new WebSearch(options.searchFetch));
+  const speech = options.speech ? new SpeechProvider(options.speech, options.speechFetch) : undefined;
   app.addHook('onClose', async () => store.close());
   await app.register(rateLimit, { global: false });
   app.addHook('onRequest', async (request, reply) => {
@@ -71,8 +76,22 @@ export async function buildApp(options: AppOptions = {}) {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', webSearch: { enabled: true },
+      ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
+  });
+  app.post<{ Body: { text: string } }>('/api/speech', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { body: { type: 'object', additionalProperties: false, required: ['text'], properties: {
+      text: { type: 'string', minLength: 1, maxLength: MAX_SPEECH_CHARACTERS },
+    } } },
+  }, async (request, reply) => {
+    if (!speech) throw new SpeechError('A voz por IA ainda não está configurada. Use a voz do aparelho.');
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
+    try { return reply.type('audio/mpeg').send(await speech.synthesize(request.body.text, controller.signal)); }
+    finally { reply.raw.removeListener('close', disconnected); }
   });
   app.get('/api/personal/session', async request => personal && auth
     ? { enabled: true, authenticated: await auth.authenticated(request), storage: personal.name } : { enabled: false });
@@ -156,7 +175,7 @@ export async function buildApp(options: AppOptions = {}) {
     } finally { reply.raw.removeListener('close', disconnected); }
   });
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ModelError || error instanceof SearchError || error instanceof PersonalError) return reply.code(error.statusCode).send({ error: error.message });
+    if (error instanceof ModelError || error instanceof SearchError || error instanceof PersonalError || error instanceof SpeechError) return reply.code(error.statusCode).send({ error: error.message });
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;
     if (status >= 500) request.log.error(error);
     reply.code(status).send({ error: status === 429 ? 'Muitas mensagens. Aguarde um minuto e tente novamente.' : status < 500 ? 'Pedido inválido. Confira a mensagem e tente novamente.' : 'O assistente encontrou um erro. Tente novamente.' });
