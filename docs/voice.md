@@ -29,9 +29,17 @@ conversa, o reconhecimento do microfone nem as memórias.
    As configurações de Groq e Supabase permanecem independentes.
 4. Salve as variáveis e aguarde o deploy. Atualize
    [o JARVIS no Render](https://jarvis-ai-dwqp.onrender.com/), entre com sua senha
-   e abra **Preferências → Tipo de voz → Automática → Testar voz**.
+   e abra **Preferências → Testar ElevenLabs**. Esse botão seleciona e salva
+   **ElevenLabs · voz natural**, inclusive se o aparelho estava selecionado.
+   Se falhar, o teste mostra o motivo e não reproduz a voz nativa.
    A indicação de configuração significa que as variáveis foram lidas;
    somente a reprodução bem-sucedida confirma a chave, a voz e o acesso real.
+
+Em **Tipo de voz**, o modo **ElevenLabs · voz natural** mostra erros e mantém o
+texto quando o serviço falha. O modo **Automática** permite usar a voz nativa como
+alternativa. **Testar voz** testa o modo escolhido; **Testar ElevenLabs** usa
+somente ElevenLabs. A indicação **Voz reproduzida: ElevenLabs** aparece quando o
+navegador inicia a reprodução do áudio retornado pela integração.
 
 Para desativar no servidor, use `TTS_PROVIDER=browser`. Para usar somente a voz
 do aparelho sem alterar o servidor, selecione **Voz do aparelho** em Preferências.
@@ -62,12 +70,16 @@ de trocar esse ID para descartar o áudio anterior.
   áudio na memória da página para repetir sem nova geração. Sair da conta ou
   recarregar a página descarta esse áudio. Repetir outra resposta pode gerar
   áudio e consumir cota novamente.
-- Falha do provedor ou cota esgotada tenta a síntese nativa e informa a mudança.
+- No modo Automática, falha do provedor ou cota esgotada tenta a síntese nativa e informa a mudança.
+  No modo ElevenLabs, exibe o erro e não troca para voz nativa. Códigos conhecidos
+  do provedor são traduzidos para indicar chave inválida, permissão de consulta
+  ou geração, limite da conta/chave, voz indisponível, recurso pago ou bloqueio
+  por atividade incomum. Mensagens externas não são exibidas ou registradas.
   A resposta em texto permanece disponível. Interromper, sair da página ou da
   conta cancela requisição/reprodução e ignora áudio atrasado. Cancelar não
   garante estorno dos créditos se o provedor já recebeu o pedido.
 - O iOS/Android pode bloquear reprodução automática depois da geração. Toque
-  em **Ouvir resposta** ou **Testar voz** para reproduzir o áudio já preparado.
+  em **Ouvir resposta**, **Testar voz** ou **Testar ElevenLabs** para reproduzir o áudio já preparado.
   O teste usa uma frase real e também consome a cota quando gera áudio novo.
   A conversa contínua aguarda o áudio terminar antes de pedir outra escuta.
 - Não existe reprodução com tela bloqueada nem escuta permanente. Xbox Edge,

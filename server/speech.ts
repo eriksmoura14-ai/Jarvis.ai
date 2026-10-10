@@ -52,7 +52,7 @@ export class SpeechProvider {
       const subscription = await this.transport('https://api.elevenlabs.io/v1/user/subscription', {
         headers, signal: controller.signal, redirect: 'error',
       });
-      await this.ensureOK(subscription);
+      await this.ensureOK(subscription, 'account');
       let account: { tier?: string; character_count?: number; character_limit?: number };
       try { account = JSON.parse((await bytes(subscription, 65_536)).toString('utf8')) as typeof account; }
       catch (error) { if (error instanceof SpeechError) throw error; throw new SpeechError('Não foi possível verificar o plano do serviço de voz.'); }
@@ -67,7 +67,7 @@ export class SpeechProvider {
           stability: 0.5, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true,
         } }),
       });
-      await this.ensureOK(response);
+      await this.ensureOK(response, 'speech');
       if (!response.headers.get('content-type')?.toLowerCase().startsWith('audio/mpeg')) {
         await response.body?.cancel();
         throw new SpeechError('O serviço de voz retornou um formato inválido.');
@@ -79,11 +79,27 @@ export class SpeechProvider {
       throw new SpeechError(controller.signal.aborted ? 'O serviço de voz demorou para responder.' : 'Não foi possível conectar ao serviço de voz.');
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); this.active = false; }
   }
-  private async ensureOK(response: Response) {
+  private async ensureOK(response: Response, operation: 'account' | 'speech') {
     if (response.ok) return;
-    await response.body?.cancel();
+    let code = '';
+    // Interpret known machine codes only; never echo external messages, headers or secrets.
+    try {
+      const data: unknown = JSON.parse((await bytes(response, 16_384)).toString('utf8'));
+      if (data && typeof data === 'object' && 'detail' in data && data.detail && typeof data.detail === 'object'
+        && 'status' in data.detail && typeof data.detail.status === 'string') code = data.detail.status;
+    } catch { /* Unknown/malformed errors use the safe HTTP-status message below. */ }
+    if (code === 'detected_unusual_activity') throw new SpeechError('O ElevenLabs bloqueou o uso gratuito nesta conexão por atividade incomum. Confira o aviso na sua conta ElevenLabs.');
+    if (['paid_plan_required', 'payment_required', 'free_users_not_allowed'].includes(code)) throw new SpeechError('O ElevenLabs exige um plano pago para esta voz ou recurso. Escolha uma voz disponível para uso pela API no plano Free.');
+    if (code === 'quota_exceeded') throw new SpeechError('A cota da conta ou da chave ElevenLabs foi atingida. Confira o limite de créditos.', 429);
+    if (code === 'invalid_api_key') throw new SpeechError('O ElevenLabs recusou a chave. Confira ELEVENLABS_API_KEY no Render.');
+    if (code === 'voice_not_found') throw new SpeechError('A voz não está disponível nesta conta. Confira ELEVENLABS_VOICE_ID no Render.');
+    if (code === 'missing_permissions') throw new SpeechError(operation === 'account'
+      ? 'A chave ElevenLabs precisa de User → Read para verificar o plano e a cota.'
+      : 'A chave ElevenLabs precisa de Text to Speech → Access para gerar áudio.');
     if (response.status === 429) throw new SpeechError('O serviço de voz atingiu um limite. Use a voz do aparelho.', 429);
-    if ([401, 403].includes(response.status)) throw new SpeechError('Confira a chave e as permissões de voz e leitura da conta no ElevenLabs.');
+    if ([401, 403].includes(response.status)) throw new SpeechError(operation === 'account'
+      ? 'O ElevenLabs recusou a consulta do plano. Confira a chave no Render e a permissão User → Read.'
+      : 'O ElevenLabs recusou a geração. Confira a permissão Text to Speech → Access e a disponibilidade da voz no plano Free.');
     if ([400, 404, 422].includes(response.status)) throw new SpeechError('Confira se a voz escolhida está disponível na sua conta ElevenLabs.');
     throw new SpeechError('O serviço de voz está indisponível. Use a voz do aparelho.');
   }

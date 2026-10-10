@@ -47,6 +47,27 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     await expect(new SpeechProvider(config, fetcher).synthesize('Olá.')).rejects.not.toThrow('external-secret');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it.each([
+    ['detected_unusual_activity', 'atividade incomum'], ['paid_plan_required', 'plano pago'],
+    ['payment_required', 'plano pago'], ['free_users_not_allowed', 'plano pago'],
+    ['quota_exceeded', 'limite de créditos'], ['invalid_api_key', 'ELEVENLABS_API_KEY'],
+    ['voice_not_found', 'ELEVENLABS_VOICE_ID'], ['missing_permissions', 'User → Read'],
+  ])('traduz código %s sem repetir mensagens externas', async (code, expected) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ detail: { status: code, message: 'external-secret-and-stack' } }, { status: 403 }));
+    const provider = new SpeechProvider(config, fetcher);
+    const error = await provider.synthesize('Olá.').catch(error => error as Error);
+    expect(error.message).toContain(expected); expect(error.message).not.toContain('external-secret');
+  });
+  it('identifica a permissão da geração quando a consulta da conta passou', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(free))
+      .mockResolvedValueOnce(Response.json({ detail: { status: 'missing_permissions', message: config.apiKey } }, { status: 403 }));
+    await expect(new SpeechProvider(config, fetcher).synthesize('Olá.')).rejects.toThrow('Text to Speech → Access');
+  });
+  it('mensagens e códigos desconhecidos continuam sanitizados mesmo em JSON', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ detail: { status: config.apiKey, message: config.apiKey } }, { status: 403 }));
+    const error = await new SpeechProvider(config, fetcher).synthesize('Olá.').catch(error => error as Error);
+    expect(error.message).toContain('User → Read'); expect(error.message).not.toContain(config.apiKey);
+  });
   it('rejeita áudio vazio, formatos errados e respostas excessivas', async () => {
     for (const response of [Response.json({ secret: 'fixture-secret' }), new Response('', { headers: { 'Content-Type': 'audio/mpeg' } }), new Response(new Uint8Array(4_000_001), { headers: { 'Content-Type': 'audio/mpeg' } })]) {
       const fetcher = transport(); fetcher.mockResolvedValueOnce(response);

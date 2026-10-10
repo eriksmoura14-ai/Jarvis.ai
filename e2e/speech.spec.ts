@@ -117,3 +117,42 @@ test('preferências oferecem teste e escolha nativa persistente; fechar para o t
   await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('browser'); expect(calls).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('teste ElevenLabs força voz natural mesmo quando o aparelho estava selecionado', async ({ page }) => {
+  let calls = 0;
+  await page.route('**/api/speech', route => { calls++; return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Tipo de voz', exact: true }).selectOption('browser');
+  await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('elevenlabs');
+  await expect(page.getByRole('dialog')).toContainText('Voz reproduzida: ElevenLabs.');
+  expect(calls).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('elevenlabs');
+});
+
+test('falha no teste ElevenLabs mostra erro e não volta a falar pela voz do Google', async ({ page }) => {
+  await page.route('**/api/speech', route => route.fulfill({ status: 503, json: { error: 'A chave ElevenLabs precisa de User → Read para verificar o plano e a cota.' } }));
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('User → Read');
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+  expect(await page.evaluate(() => (window as unknown as { speechTest: { plays: number } }).speechTest.plays)).toBe(0);
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
+  await page.getByRole('button', { name: 'Falar com JARVIS', exact: true }).click();
+  await completeRecognition(page, 'calcular dois mais cinco');
+  await expect(page.getByRole('alert')).toContainText('User → Read');
+  await expect(page.locator('.scene-reply')).toContainText('O resultado é 7.');
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+});
+
+test('modo ElevenLabs preservado informa quando servidor não tem voz configurada', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.speech-engine.v1', 'elevenlabs'));
+  await prepare(page);
+  await response(page);
+  await expect(page.getByRole('alert')).toContainText('não está configurado');
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+});

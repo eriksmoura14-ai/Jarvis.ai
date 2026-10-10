@@ -266,11 +266,11 @@ function useNativeSpeechOutput() {
   return { supported, speaking, busy, error, voices, voiceUri, chooseVoice, speak, stop };
 }
 
-type SpeechEngine = 'auto' | 'browser';
+type SpeechEngine = 'auto' | 'browser' | 'elevenlabs';
 export function useSpeechOutput(cloudAvailable = false) {
   const native = useNativeSpeechOutput();
   const [engine, setEngine] = useState<SpeechEngine>(() => {
-    try { return localStorage.getItem('jarvis.speech-engine.v1') === 'browser' ? 'browser' : 'auto'; } catch { return 'auto'; }
+    try { const saved = localStorage.getItem('jarvis.speech-engine.v1'); return saved === 'browser' || saved === 'elevenlabs' ? saved : 'auto'; } catch { return 'auto'; }
   });
   const [busy, setBusy] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -296,11 +296,15 @@ export function useSpeechOutput(cloudAvailable = false) {
     objectUrl.current = '';
     native.stop(); setBusy(false); setSpeaking(false);
   }, [native.stop]);
-  const speak = useCallback(async (text: string): Promise<SpeechOutcome> => {
+  const speak = useCallback(async (text: string, selectedEngine: SpeechEngine = engine): Promise<SpeechOutcome> => {
     stop(); setError(''); setNotice('');
-    if (!cloudAvailable || engine === 'browser') return native.speak(text);
+    if (selectedEngine === 'elevenlabs' && !cloudAvailable) {
+      setError('O ElevenLabs não está configurado neste servidor. Confira as variáveis no Render e atualize a página.');
+      return 'unavailable';
+    }
+    if (!cloudAvailable || selectedEngine === 'browser') return native.speak(text);
     const prose = speechText(text);
-    if (!prose) return native.speak(text);
+    if (!prose) return selectedEngine === 'elevenlabs' ? 'unavailable' : native.speak(text);
     const token = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     setBusy(true);
@@ -331,7 +335,9 @@ export function useSpeechOutput(cloudAvailable = false) {
           if (token !== generation.current) return;
           if (cause instanceof SpeechRequestError && cause.status === 401) { complete('canceled'); return; }
           providerFailed = true;
-          setNotice(`${cause instanceof SpeechRequestError ? cause.message : 'A voz por IA está indisponível.'} ${native.supported ? 'Usando a voz do aparelho.' : 'Continue pelo texto.'}`);
+          const message = cause instanceof SpeechRequestError ? cause.message : 'Não foi possível conectar à voz por IA.';
+          if (selectedEngine === 'elevenlabs') setError(message);
+          else setNotice(`${message} ${native.supported ? 'Usando a voz do aparelho.' : 'Continue pelo texto.'}`);
           complete('error'); return;
         }
         if (token !== generation.current) return;
@@ -341,6 +347,7 @@ export function useSpeechOutput(cloudAvailable = false) {
         const player = new Audio(objectUrl.current); audio.current = player;
         player.onplaying = () => {
           if (token !== generation.current) return;
+          setNotice('Voz reproduzida: ElevenLabs.');
           setSpeaking(true); clearTimeout(timer); timer = setTimeout(playbackFailed, 360_000);
         };
         player.onended = () => { if (token === generation.current) complete('ended'); };
@@ -352,7 +359,7 @@ export function useSpeechOutput(cloudAvailable = false) {
       void run().catch(() => playbackFailed());
     });
     if (token !== generation.current) return 'canceled';
-    return providerFailed && native.supported ? native.speak(text) : outcome;
+    return providerFailed && selectedEngine === 'auto' && native.supported ? native.speak(text) : outcome;
   }, [cloudAvailable, engine, native.speak, native.supported, stop]);
   const chooseEngine = (value: SpeechEngine) => {
     stop(); setEngine(value); setError(''); setNotice('');
