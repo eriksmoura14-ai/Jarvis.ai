@@ -37,6 +37,14 @@ Esse passo precisa da sua conta: o agente não tem acesso administrativo aos
 painéis Supabase/Render. Os testes locais não confirmam a configuração do seu
 projeto. Não há recurso que crie uma conta ou informe uma senha automaticamente.
 
+Se o build passar e o processo encerrar com **variável ausente ou vazia**, o início
+da mensagem identifica o nome que falta: `SUPABASE_URL` ou `SUPABASE_SECRET_KEY`.
+Confira **Environment do mesmo serviço Render** indicado acima, preencha o valor
+e salve com um novo deploy. Cadastrar uma chave no Supabase não a cadastra no
+Render. O aviso `.env not found` é normal quando as variáveis vêm do painel.
+Não envie valores de senhas/chaves junto dos logs. A validação não ignora uma
+conexão incompleta nem troca automaticamente para armazenamento temporário.
+
 ## Usar
 
 - `lembre que estudo programação à noite` salva uma preferência explícita.

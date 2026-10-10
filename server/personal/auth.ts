@@ -7,9 +7,14 @@ export interface PersonalConfig { password: string; secure: boolean; supabase?: 
 export function readPersonalConfig(env: NodeJS.ProcessEnv): PersonalConfig | undefined {
   if (!env.JARVIS_PASSWORD && !env.SUPABASE_URL && !env.SUPABASE_SECRET_KEY) return;
   if (!env.JARVIS_PASSWORD || env.JARVIS_PASSWORD.length < 12 || env.JARVIS_PASSWORD.length > 200) throw new Error('Defina JARVIS_PASSWORD no backend com 12 a 200 caracteres.');
-  if (Boolean(env.SUPABASE_URL) !== Boolean(env.SUPABASE_SECRET_KEY)) throw new Error('Configure SUPABASE_URL e SUPABASE_SECRET_KEY juntas no backend.');
+  const url = env.SUPABASE_URL?.trim();
+  const key = env.SUPABASE_SECRET_KEY?.trim();
+  if ((env.SUPABASE_URL || env.SUPABASE_SECRET_KEY) && (!url || !key)) {
+    const missing = [!url ? 'SUPABASE_URL' : '', !key ? 'SUPABASE_SECRET_KEY' : ''].filter(Boolean).join(' e ');
+    throw new Error(`${missing}: variável ausente ou vazia. No Render, abra Environment, preencha esse nome exato e salve com novo deploy. SUPABASE_URL e SUPABASE_SECRET_KEY devem ser configuradas juntas.`);
+  }
   return { password: env.JARVIS_PASSWORD, secure: env.RENDER === 'true' || env.NODE_ENV === 'production',
-    ...(env.SUPABASE_URL && env.SUPABASE_SECRET_KEY ? { supabase: { url: env.SUPABASE_URL, key: env.SUPABASE_SECRET_KEY } } : {}) };
+    ...(url && key ? { supabase: { url, key } } : {}) };
 }
 const derive = promisify(scrypt);
 const lifetime = 7 * 24 * 60 * 60 * 1000;

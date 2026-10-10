@@ -127,6 +127,26 @@ describe('Acesso e memória pessoal', () => {
     expect(() => readPersonalConfig({ JARVIS_PASSWORD: password, SUPABASE_URL: 'https://example.supabase.co' })).toThrow('juntas');
     expect(readPersonalConfig({ JARVIS_PASSWORD: password, RENDER: 'true' })?.secure).toBe(true);
   });
+  it.each([
+    { SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_SECRET_KEY: undefined, missing: 'SUPABASE_SECRET_KEY' },
+    { SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_SECRET_KEY: '  ', missing: 'SUPABASE_SECRET_KEY' },
+    { SUPABASE_URL: undefined, SUPABASE_SECRET_KEY: 'sb_secret_fixture_only', missing: 'SUPABASE_URL' },
+    { SUPABASE_URL: '  ', SUPABASE_SECRET_KEY: 'sb_secret_fixture_only', missing: 'SUPABASE_URL' },
+  ])('informa apenas o nome ausente $missing sem imprimir valores', ({ missing, ...env }) => {
+    let error: unknown;
+    try { readPersonalConfig({ ...env, JARVIS_PASSWORD: password }); } catch (cause) { error = cause; }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(new RegExp(`^${missing}: variável ausente ou vazia`));
+    expect(String(error)).not.toContain(password);
+    expect(String(error)).not.toContain('sb_secret_fixture_only');
+    expect(String(error)).not.toContain('https://fixture.supabase.co');
+  });
+  it('remove espaços da conexão e preserva a senha e o modo SQLite explícito', () => {
+    const config = readPersonalConfig({ JARVIS_PASSWORD: ` ${password} `, SUPABASE_URL: ' https://fixture.supabase.co ', SUPABASE_SECRET_KEY: ' sb_secret_fixture_only ' });
+    expect(config?.password).toBe(` ${password} `);
+    expect(config?.supabase).toEqual({ url: 'https://fixture.supabase.co', key: 'sb_secret_fixture_only' });
+    expect(readPersonalConfig({ JARVIS_PASSWORD: password, SUPABASE_URL: '', SUPABASE_SECRET_KEY: '' })?.supabase).toBeUndefined();
+  });
   it('impõe os limites de memória e mantém orçamento global após outra instância', async () => {
     const db = new NoteStore(':memory:');
     try {
