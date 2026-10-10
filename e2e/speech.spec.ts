@@ -22,6 +22,7 @@ async function cloud(page: Page, fakePlayback = true) {
 const mp3 = readFileSync(new URL('./fixtures/tone.mp3', import.meta.url));
 async function response(page: Page) {
   await page.getByRole('button', { name: 'Falar com JARVIS' }).click();
+  await expect(page.getByRole('status')).toContainText('À escuta');
   await completeRecognition(page, 'calcular dois mais cinco');
   await expect(page.locator('.scene-reply')).toContainText('O resultado é 7.');
 }

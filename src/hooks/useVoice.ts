@@ -111,9 +111,12 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
         speech.lang = 'pt-BR';
         speech.continuous = false;
         speech.interimResults = true;
-        speech.onstart = () => { if (token === generation.current) changePhase('recording'); };
+        // An ended recognition can still deliver queued callbacks. Keep its token
+        // for MediaRecorder finalization, but accept events only from the live instance.
+        const active = () => token === generation.current && recognition.current === speech;
+        speech.onstart = () => { if (active() && phaseRef.current !== 'idle') changePhase('recording'); };
         speech.onresult = event => {
-          if (token !== generation.current) return;
+          if (!active()) return;
           let final = '', pending = '';
           for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) final += event.results[i][0].transcript + ' ';
@@ -126,7 +129,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
           }
         };
         speech.onerror = event => {
-          if (token !== generation.current || event.error === 'aborted') return;
+          if (!active() || event.error === 'aborted') return;
           const messages: Record<string, string> = {
             'not-allowed': 'Permissão do microfone negada. Confira as permissões do navegador ou digite.',
             'service-not-allowed': 'Este navegador bloqueou o serviço de voz. Continue digitando.',
@@ -138,7 +141,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
           cancel();
         };
         speech.onend = () => {
-          if (token !== generation.current) return;
+          if (!active()) return;
           recognition.current = null;
           release();
           const text = transcript.current.trim();
