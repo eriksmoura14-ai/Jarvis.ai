@@ -64,7 +64,8 @@ test('chat consulta notas reais mesmo com web marcada, preserva referências e r
   await page.getByRole('button', { name: 'Remover cópia: React', exact: true }).click(); await page.getByRole('button', { name: 'Cancelar remoção' }).click();
   await expect(page.getByRole('article', { name: 'Nota React' })).toBeVisible();
   await page.getByRole('button', { name: 'Remover cópia: React', exact: true }).click(); await page.getByRole('button', { name: 'Confirmar remoção da cópia' }).click();
-  await expect(page.getByRole('dialog').getByRole('status')).toContainText('Cópia removida');
+  await expect(page.getByRole('dialog').getByRole('status').filter({ hasText: 'Cópia removida' })).toContainText('Cópia removida');
+  await expect(page.getByRole('article', { name: 'Nota React' })).toHaveCount(0);
   const data = await (await page.request.get('/api/personal/data')).json();
   expect(data.library.some((note: { path: string }) => note.path === 'React.md')).toBe(false);
   expect(data.history.at(-1).knowledgeSources).toEqual([]);

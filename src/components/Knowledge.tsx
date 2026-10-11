@@ -82,7 +82,7 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
   };
   const remove = async (id: string) => {
     if (busy) return; setBusy(true); setError(''); setNotice('');
-    try { await personalRequest(`knowledge/${encodeURIComponent(id)}`, 'DELETE', { libraryRevision: revision }); setSelected(undefined); if (draft?.id === id) setDraft(undefined); setRemoving(undefined); setNotice('Cópia removida da conta. O arquivo original do Obsidian foi preservado.');
+    try { await personalRequest(`knowledge/${encodeURIComponent(id)}`, 'DELETE', { libraryRevision: revision }); setSelected(undefined); setNote(undefined); if (draft?.id === id) setDraft(undefined); setRemoving(undefined); setNotice('Cópia removida da conta. O arquivo original do Obsidian foi preservado.');
       await onRefresh().catch(() => setError('A cópia foi removida. Recarregue para atualizar a biblioteca.'));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível remover.'); await onRefresh().catch(() => {}); }
     finally { setBusy(false); }
