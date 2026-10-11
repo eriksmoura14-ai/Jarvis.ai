@@ -94,12 +94,34 @@ export async function buildApp(options: AppOptions = {}) {
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
       ...(provider instanceof HybridProvider ? { ai: { configured: true, provider: provider.name, model: provider.model.config.model } } : {}) };
   });
-  app.post<{ Body: { text: string; voiceId?: string; profile?: 'natural' | 'british' } }>('/api/speech', {
+  app.get('/api/speech/voices', {
+    config: { rateLimit: { max: 4, timeWindow: '1 minute' } },
+    schema: { querystring: { type: 'object', additionalProperties: false, properties: {} } },
+  }, async (_request, reply) => {
+    if (!speech) throw new SpeechError('A voz por IA ainda não está configurada. Use a voz do aparelho.');
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
+    try { return await speech.brazilianVoices(controller.signal); }
+    finally { reply.raw.removeListener('close', disconnected); }
+  });
+  app.get('/api/speech/quota', {
+    config: { rateLimit: { max: 4, timeWindow: '1 minute' } },
+    schema: { querystring: { type: 'object', additionalProperties: false, properties: {} } },
+  }, async (_request, reply) => {
+    if (!speech) throw new SpeechError('A voz por IA ainda não está configurada. Use a voz do aparelho.');
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
+    try { return await speech.quota(controller.signal); }
+    finally { reply.raw.removeListener('close', disconnected); }
+  });
+  app.post<{ Body: { text: string; voiceId?: string; profile?: 'natural' | 'british' | 'jarvis-br' } }>('/api/speech', {
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     schema: { body: { type: 'object', additionalProperties: false, required: ['text'], properties: {
       text: { type: 'string', minLength: 1, maxLength: MAX_SPEECH_CHARACTERS },
       voiceId: { type: 'string', pattern: '^[a-zA-Z0-9]{1,100}$', minLength: 1, maxLength: 100 },
-      profile: { type: 'string', enum: ['natural', 'british'] },
+      profile: { type: 'string', enum: ['natural', 'british', 'jarvis-br'] },
     } } },
   }, async (request, reply) => {
     if (!speech) throw new SpeechError('A voz por IA ainda não está configurada. Use a voz do aparelho.');

@@ -7,6 +7,7 @@ import { readSpeechConfig, SpeechProvider } from './speech';
 const config = { apiKey: 'fixture-not-an-elevenlabs-key', voiceId: 'fixtureVoice123' };
 const free = { tier: 'free', character_count: 20, character_limit: 1000 };
 const clip = () => new Response(new Uint8Array([73, 68, 51, 1]), { headers: { 'Content-Type': 'audio/mpeg' } });
+const libraryVoice = { voice_id: 'JarvisBrazilFixture', name: 'JARVIS brasileiro de teste', gender: 'male', language: 'pt', locale: 'pt-BR', free_users_allowed: true, rate: 1, fiat_rate: null };
 const apps: FastifyInstance[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); });
 function transport(account: unknown = free) {
@@ -31,15 +32,87 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     expect(request).toMatchObject({ redirect: 'error', method: 'POST', headers: { 'xi-api-key': config.apiKey } });
     expect(JSON.parse(request!.body as string)).toMatchObject({ text: 'Olá, sou o Jarvis.', model_id: 'eleven_multilingual_v2' });
   });
-  it('aplica estilo estável e Voice ID escolhido sem permitir URL ou trocar o modelo', async () => {
+  it.each(['british', 'jarvis-br'] as const)('aplica estilo estável %s e Voice ID escolhido sem permitir URL ou trocar o modelo', async profile => {
     const fetcher = transport();
-    await new SpeechProvider(config, fetcher).synthesize('Good morning, sir.', undefined, { voiceId: 'BritishFixture', profile: 'british' });
+    await new SpeechProvider(config, fetcher).synthesize('Good morning, sir.', undefined, { voiceId: 'BritishFixture', profile });
     expect(fetcher.mock.calls[1][0]).toBe('https://api.elevenlabs.io/v1/text-to-speech/BritishFixture?output_format=mp3_44100_128');
     expect(JSON.parse(fetcher.mock.calls[1][1]!.body as string)).toEqual({ text: 'Good morning, sir.', model_id: 'eleven_multilingual_v2',
       voice_settings: { stability: 0.7, similarity_boost: 0.75, style: 0, use_speaker_boost: true } });
     expect(fetcher).toHaveBeenCalledTimes(2);
     await expect(new SpeechProvider(config, fetcher).synthesize('Olá.', undefined, { voiceId: 'https://other.test/' })).rejects.toMatchObject({ statusCode: 400 });
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('busca JARVIS brasileiro no host fixo e exclui vozes pagas, desconhecidas ou incompatíveis', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ voices: [
+      { ...libraryVoice, preview_url: 'https://other.test/private', public_owner_id: config.apiKey },
+      { ...libraryVoice, voice_id: 'Paid', free_users_allowed: false }, { ...libraryVoice, voice_id: 'Unknown', free_users_allowed: undefined },
+      { ...libraryVoice, voice_id: 'Female', gender: 'female' }, { ...libraryVoice, voice_id: 'English', language: 'en' },
+      { ...libraryVoice, voice_id: 'Portugal', locale: 'pt-PT' }, { ...libraryVoice, voice_id: '../secret' },
+      { ...libraryVoice, voice_id: 'CustomRate', rate: 2 }, { ...libraryVoice, voice_id: 'FiatRate', fiat_rate: 0.5 },
+      { ...libraryVoice, voice_id: 'Unrelated', name: 'Outra voz' }, libraryVoice,
+    ] }));
+    const result = await new SpeechProvider(config, fetcher).brazilianVoices();
+    expect(result).toEqual({ voices: [{ id: libraryVoice.voice_id, name: libraryVoice.name }], matchedJarvis: true });
+    const url = new URL(fetcher.mock.calls[0][0] as string);
+    expect(url.origin + url.pathname).toBe('https://api.elevenlabs.io/v1/shared-voices');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ language: 'pt', locale: 'pt-BR', gender: 'male', page_size: '20', include_custom_rates: 'false', search: 'jarvis' });
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ redirect: 'error', headers: { 'xi-api-key': config.apiKey } });
+    expect(JSON.stringify(result)).not.toContain(config.apiKey); expect(JSON.stringify(result)).not.toContain('preview_url');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('apresenta alternativas brasileiras com nome próprio sem afirmar que sejam JARVIS', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ voices: [{ ...libraryVoice, free_users_allowed: false }] }))
+      .mockResolvedValueOnce(Response.json({ voices: Array.from({ length: 12 }, (_, i) => ({ ...libraryVoice, voice_id: `Fixture${i}`, name: `Brasileiro ${i}` })) }));
+    const result = await new SpeechProvider(config, fetcher).brazilianVoices();
+    expect(result.matchedJarvis).toBe(false); expect(result.voices).toHaveLength(6);
+    expect(new URL(fetcher.mock.calls[1][0] as string).searchParams.has('search')).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('não inventa uma voz quando a biblioteca não contém uma alternativa gratuita', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ voices: [{ ...libraryVoice, free_users_allowed: false }] }));
+    expect(await new SpeechProvider(config, fetcher).brazilianVoices()).toEqual({ voices: [], matchedJarvis: false });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('consulta somente saldo e renovação da conta, sem gerar áudio ou expor campos externos', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ ...free, next_character_count_reset_unix: 1793491200, email: 'private@example.test', api_key: config.apiKey }));
+    expect(await new SpeechProvider(config, fetcher).quota()).toEqual({ used: 20, limit: 1000, remaining: 980, nextResetAt: '2026-11-01T00:00:00.000Z' });
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(fetcher.mock.calls[0][0]).toBe('https://api.elevenlabs.io/v1/user/subscription');
+  });
+  it('mostra saldo esgotado sem tentar síntese e omite renovação inválida', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ ...free, character_count: 1001, next_character_count_reset_unix: 'tomorrow' }));
+    expect(await new SpeechProvider(config, fetcher).quota()).toEqual({ used: 1001, limit: 1000, remaining: 0 }); expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it.each([null, { ...free, tier: 'paid' }, { ...free, character_count: -1 }, { ...free, character_limit: '1000' }])('não apresenta cota inválida: %j', async data => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(data));
+    await expect(new SpeechProvider(config, fetcher).quota()).rejects.toThrow(); expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('cancela e limita a consulta de saldo sem gerar áudio', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options!.signal!.addEventListener('abort', () => reject(new DOMException('Canceled', 'AbortError')), { once: true });
+    }));
+    const controller = new AbortController(); controller.abort();
+    await expect(new SpeechProvider(config, fetcher).quota(controller.signal)).rejects.toMatchObject({ statusCode: 499 }); expect(fetcher).not.toHaveBeenCalled();
+    await expect(new SpeechProvider(config, fetcher, 10).quota()).rejects.toThrow('demorou'); expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it.each([null, {}, { voices: null }])('rejeita catálogo malformado %j', async data => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(data));
+    await expect(new SpeechProvider(config, fetcher).brazilianVoices()).rejects.toThrow('dados inválidos');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('explica permissão Voices Read sem exibir detalhes externos ou gerar áudio', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ detail: { status: 'missing_permissions', message: config.apiKey } }, { status: 403 }));
+    await expect(new SpeechProvider(config, fetcher).brazilianVoices()).rejects.toThrow('Voices → Read');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('cancela catálogo antes da consulta e limita tempo de resposta', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options!.signal!.addEventListener('abort', () => reject(new DOMException('Canceled', 'AbortError')), { once: true });
+    }));
+    const controller = new AbortController(); controller.abort();
+    await expect(new SpeechProvider(config, fetcher).brazilianVoices(controller.signal)).rejects.toMatchObject({ statusCode: 499 });
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(new SpeechProvider(config, fetcher, 10).brazilianVoices()).rejects.toThrow('demorou');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it.each([{ ...free, tier: 'starter' }, { ...free, tier: 'unknown' }, null, { tier: 'free' }, { ...free, character_count: -1 }, { ...free, character_count: 999 }])('não gera áudio com plano/cota inválidos: %j', async account => {
     const fetcher = transport(account);
@@ -136,5 +209,34 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     await expect(buildApp({ databasePath: ':memory:', speech: config })).rejects.toThrow('senha');
     const app = await buildApp({ databasePath: ':memory:' }); apps.push(app);
     expect((await app.inject({ method: 'POST', url: '/api/speech', payload: { text: 'Olá.' } })).json().error).toContain('não está configurada');
+  });
+  it('protege o catálogo por login e origem, recusa filtros externos e limita consultas', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ voices: [libraryVoice] }));
+    const app = await buildApp({ databasePath: ':memory:', personal: { password: 'fixture-personal-password', secure: false }, speech: config, speechFetch: fetcher }); apps.push(app);
+    expect((await app.inject('/api/speech/voices')).statusCode).toBe(401); expect(fetcher).not.toHaveBeenCalled();
+    const login = await app.inject({ method: 'POST', url: '/api/personal/login', headers: { 'x-jarvis-client': '1' }, payload: { password: 'fixture-personal-password' } });
+    const headers = { cookie: login.cookies[0].name + '=' + login.cookies[0].value };
+    expect((await app.inject({ url: '/api/speech/voices', headers: { ...headers, origin: 'https://other.test' } })).statusCode).toBe(403);
+    expect((await app.inject({ url: '/api/speech/voices?url=https://other.test', headers })).statusCode).toBe(400);
+    expect(fetcher).not.toHaveBeenCalled();
+    const result = await app.inject({ url: '/api/speech/voices', headers });
+    expect(result.statusCode).toBe(200); expect(result.headers['cache-control']).toBe('no-store');
+    expect(result.json()).toEqual({ voices: [{ id: libraryVoice.voice_id, name: libraryVoice.name }], matchedJarvis: true });
+    await app.inject({ url: '/api/speech/voices', headers }); await app.inject({ url: '/api/speech/voices', headers });
+    expect((await app.inject({ url: '/api/speech/voices', headers })).statusCode).toBe(429);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('o saldo exige login e não expõe chaves ou dados do titular da conta', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ ...free, key: config.apiKey, email: 'private@example.test' }));
+    const app = await buildApp({ databasePath: ':memory:', personal: { password: 'fixture-personal-password', secure: false }, speech: config, speechFetch: fetcher }); apps.push(app);
+    expect((await app.inject('/api/speech/quota')).statusCode).toBe(401); expect(fetcher).not.toHaveBeenCalled();
+    const login = await app.inject({ method: 'POST', url: '/api/personal/login', headers: { 'x-jarvis-client': '1' }, payload: { password: 'fixture-personal-password' } });
+    const headers = { cookie: login.cookies[0].name + '=' + login.cookies[0].value };
+    expect((await app.inject({ url: '/api/speech/quota?key=other', headers })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/speech/quota', headers: { ...headers, origin: 'https://other.test' } })).statusCode).toBe(403);
+    const result = await app.inject({ url: '/api/speech/quota', headers });
+    expect(result.statusCode).toBe(200); expect(result.headers['cache-control']).toBe('no-store');
+    expect(result.json()).toEqual({ used: 20, limit: 1000, remaining: 980 });
+    expect(result.body).not.toContain(config.apiKey); expect(result.body).not.toContain('private@example.test');
   });
 });

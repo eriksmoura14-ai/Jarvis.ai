@@ -53,7 +53,7 @@ reproduzir a voz antiga. Para usar o mesmo ID como padrão no celular e Xbox, co
 `ELEVENLABS_VOICE_ID` no Render e deixe esse campo vazio nos dois aparelhos;
 atualize as páginas depois de trocar a variável.
 
-## Responder em áudio e estilo britânico
+## Responder em áudio e estilo JARVIS brasileiro
 
 A leitura automática do chat vem ligada nesta atualização. A antiga preferência
 v1 gravava `false` mesmo sem uma escolha explícita; v2 inicia a leitura uma vez
@@ -61,24 +61,65 @@ e preserva as próximas escolhas, inclusive desligar. Desative em **Preferência
 → Ler respostas automaticamente no chat**. No modo voz, o botão de som controla
 a leitura. Somente a resposta final é falada; rascunhos e erros da IA não são.
 
-**Estilo de fala → Britânico · calmo e preciso** vem selecionado. Usa maior
-estabilidade e menos expressividade no ElevenLabs e uma frase de teste em
-inglês com “sir”. Na síntese nativa, prefere `en-GB` quando disponível e usa ritmo
-0,94. Uma voz nativa escolhida manualmente tem prioridade. No ElevenLabs, é
-necessário escolher uma voz masculina britânica disponível pela API Free na
-[biblioteca](https://elevenlabs.io/app/voice-library), salvar seu Voice ID e testar.
-O perfil não altera o timbre/gênero de uma voz existente, não garante a voz do
-ator do filme e não traduz as respostas. Para respostas em inglês, converse em
-inglês ou peça explicitamente esse idioma. “Natural · português” restaura o
-teste em português e os ajustes anteriores. Perfil e Voice ID escolhido no
-aplicativo são preferências deste navegador.
+**Estilo de fala → JARVIS · português brasileiro, calmo e preciso** vem
+selecionado nesta atualização. A preferência passa de v1 para v2 uma vez; novas
+escolhas continuam salvas por navegador. O teste diz “Bom dia, senhor” em
+português. No ElevenLabs, o perfil usa maior estabilidade (0,7) e menos
+expressividade (0); no aparelho, prefere uma voz `pt-BR` e ritmo 0,94. Uma voz
+nativa escolhida manualmente tem prioridade. O perfil não troca o timbre/gênero
+nem comprova uma cópia da dublagem. As respostas continuam no idioma da conversa.
+“Natural · português” mantém os ajustes anteriores; “Britânico · calmo e preciso”
+continua disponível com teste em inglês e preferência nativa `en-GB`.
+
+### Encontrar uma voz brasileira
+
+Em **Preferências → Buscar voz JARVIS brasileira**, o backend consulta a
+biblioteca ElevenLabs com sua chave, sem gerar áudio. A chave precisa de
+**Voices → Read**; ajuste essa permissão na conta ElevenLabs se o botão informar
+que ela está ausente. Não é necessário colocar a chave no navegador ou enviá-la
+pelo chat.
+
+A busca consulta até 20 vozes masculinas `pt`/`pt-BR` com “jarvis” no nome e, se
+não houver opções elegíveis, consulta até 20 alternativas brasileiras. Exclui
+vozes sem `free_users_allowed=true`, idioma/localidade incompatíveis e tarifas
+personalizadas. Mostra até seis opções, sem prometer que o nome JARVIS seja a
+voz oficial. Não altera sua biblioteca ElevenLabs nem remove vozes existentes.
+**Usar [nome]** salva o Voice ID neste navegador, seleciona o perfil brasileiro
+e ElevenLabs; não gera áudio. Depois, **Testar ElevenLabs** verifica plano/cota
+e testa a voz pela API. Esse teste consome créditos quando cria áudio novo.
+Se o serviço exigir, adicione a voz à sua biblioteca pelo ElevenLabs antes de
+testar novamente. Se não houver opções gratuitas, a aplicação informa isso e
+mantém a voz atual disponível. O acesso real e o timbre dependem da sua conta;
+os testes do projeto usam catálogo simulado.
+
+### Cota de voz atingida
+
+**Preferências → Consultar cota de voz** usa a permissão **User → Read** já
+necessária para gerar áudio. Retorna somente os caracteres usados, limite,
+saldo e data de renovação informada pela API, quando existir. Não gera áudio,
+não gasta créditos de síntese, não aumenta limites e não altera faturamento.
+
+Saldo zero indica a cota da conta esgotada. A renovação é a que o ElevenLabs
+informar; não há promessa de que esperar um minuto resolva. Um texto maior que
+o saldo também é recusado. Uma chave pode ter um limite próprio menor mesmo
+com saldo na conta; confira esse limite na seção API Keys. Limites temporários
+de requisições são separados. Trocar de voz, chave ou recarregar não repõe o
+saldo da conta.
+
+**Usar voz do aparelho · sem cota ElevenLabs** seleciona a síntese nativa. A
+qualidade e as vozes disponíveis dependem do Android/Edge; a escolha não
+promete o timbre do filme. Não chama o ElevenLabs. No modo Automática, uma
+falha do provedor pode usar essa alternativa; no modo ElevenLabs, o erro
+continua explícito até você trocar de modo. Texto e leitura automática
+permanecem disponíveis conforme os recursos do navegador.
 
 ## Como funciona e limites
 
 - A rota autenticada `POST /api/speech` aceita texto até 1.200 caracteres e,
   opcionalmente, `voiceId` alfanumérico (1–100 caracteres) e `profile`
-  (`natural` ou `british`). Não recebe chaves, URL ou modelo do frontend.
+  (`natural`, `british` ou `jarvis-br`). Não recebe chaves, URL ou modelo do frontend.
   O host, o modelo e os ajustes permitidos permanecem definidos no backend.
+- As rotas de catálogo (`GET /api/speech/voices`) e saldo (`GET /api/speech/quota`) exigem login, recusam parâmetros extras e têm limite de quatro consultas por minuto/IP, timeout de 20 segundos e respostas com campos limitados. A consulta do catálogo permite até duas chamadas ao host fixo do ElevenLabs; a consulta de saldo faz uma.
 - O backend consulta `GET /v1/user/subscription` antes de cada geração. Só aceita
   `tier=free`, contagens válidas e cota suficiente. Contas pagas, planos
   desconhecidos e falhas nessa verificação não geram áudio. A cota é a que a

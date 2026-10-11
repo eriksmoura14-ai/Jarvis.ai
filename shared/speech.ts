@@ -1,7 +1,10 @@
 export const MAX_SPEECH_CHARACTERS = 1200;
-export type SpeechProfile = 'natural' | 'british';
+export type SpeechProfile = 'natural' | 'british' | 'jarvis-br';
 export interface SpeechOptions { voiceId?: string; profile?: SpeechProfile }
 export const VOICE_ID_PATTERN = /^[a-zA-Z0-9]{1,100}$/;
+export interface SpeechVoice { id: string; name: string }
+export interface SpeechVoiceCatalog { voices: SpeechVoice[]; matchedJarvis: boolean }
+export interface SpeechQuota { used: number; limit: number; remaining: number; nextResetAt?: string }
 
 // Read prose instead of markdown syntax, links and research reference numbers.
 export function speechText(text: string) {

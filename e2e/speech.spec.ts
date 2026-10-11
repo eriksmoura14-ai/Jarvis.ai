@@ -34,7 +34,7 @@ test('voz por IA usa a API protegida e reprodução MP3, sem síntese nativa', a
   let calls = 0;
   await page.route('**/api/speech', async route => {
     calls++; expect(route.request().headers()['x-jarvis-client']).toBe('1');
-    expect(route.request().postDataJSON()).toEqual({ text: 'O resultado é 7.', profile: 'british' });
+    expect(route.request().postDataJSON()).toEqual({ text: 'O resultado é 7.', profile: 'jarvis-br' });
     await route.fulfill({ contentType: 'audio/mpeg', body: mp3 });
   });
   await cloud(page); await response(page);
@@ -204,7 +204,8 @@ test('trocar Voice ID descarta o áudio anterior, valida entrada e preserva a es
   const requests: Array<{ voiceId?: string; profile: string; text: string }> = [];
   await page.route('**/api/speech', route => { requests.push(route.request().postDataJSON()); return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
   await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('british');
+  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('jarvis-br');
+  await page.getByRole('combobox', { name: 'Estilo de fala' }).selectOption('british');
   await page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' }).fill('BritishFixtureA');
   await page.getByRole('button', { name: 'Salvar voz', exact: true }).click();
   await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
@@ -224,6 +225,7 @@ test('trocar Voice ID descarta o áudio anterior, valida entrada e preserva a es
   await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
   await page.getByRole('button', { name: 'Preferências', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' })).toHaveValue('BritishFixtureB');
+  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('british');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -236,10 +238,85 @@ test('perfil britânico seleciona voz nativa en-GB disponível com ritmo mais ca
     ] as SpeechSynthesisVoice[];
   });
   await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Estilo de fala' }).selectOption('british');
   await page.getByRole('combobox', { name: 'Tipo de voz', exact: true }).selectOption('browser');
   await page.getByRole('button', { name: 'Testar voz', exact: true }).click();
   expect(await page.evaluate(() => {
     const utterance = (window as unknown as { voiceTest: { utterance: SpeechSynthesisUtterance } }).voiceTest.utterance;
     return { lang: utterance.lang, rate: utterance.rate, voice: utterance.voice?.voiceURI };
   })).toEqual({ lang: 'en-GB', rate: 0.94, voice: 'test-gb' });
+});
+
+test('busca voz brasileira sem gerar áudio, salva a escolha e testa em português com senhor', async ({ page }) => {
+  let clips = 0; const selected = 'JarvisBrazilFixture';
+  await page.addInitScript(() => localStorage.setItem('jarvis.speech-profile.v1', 'british'));
+  await page.route('**/api/speech/voices', route => route.fulfill({ json: { voices: [{ id: selected, name: 'JARVIS brasileiro de teste' }], matchedJarvis: true } }));
+  await page.route('**/api/speech', route => { clips++; expect(route.request().postDataJSON()).toEqual({ text: 'Bom dia, senhor. Sou o Jarvis. Estou pronto para ajudar. Qual é a nossa prioridade hoje?', profile: 'jarvis-br', voiceId: selected }); return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('jarvis-br');
+  await page.getByRole('button', { name: 'Buscar voz JARVIS brasileira' }).click();
+  const catalog = page.getByRole('region', { name: 'Vozes brasileiras encontradas' });
+  await expect(catalog).toContainText('não comprova'); expect(clips).toBe(0);
+  await page.getByRole('button', { name: 'Usar JARVIS brasileiro de teste' }).click();
+  await expect(page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' })).toHaveValue(selected);
+  await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('elevenlabs'); expect(clips).toBe(0);
+  await page.getByRole('button', { name: 'Testar ElevenLabs' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Voz reproduzida: ElevenLabs.'); expect(clips).toBe(1);
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' })).toHaveValue(selected);
+  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('jarvis-br');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('busca apresenta alternativa, ausência ou permissão necessária sem inventar a voz do filme', async ({ page }) => {
+  let calls = 0;
+  await page.route('**/api/speech/voices', route => {
+    calls++;
+    return calls === 1 ? route.fulfill({ json: { voices: [{ id: 'BrazilianFixture', name: 'Voz brasileira de teste' }], matchedJarvis: false } })
+      : calls === 2 ? route.fulfill({ json: { voices: [], matchedJarvis: false } })
+      : route.fulfill({ status: 503, json: { error: 'A chave ElevenLabs precisa de Voices → Read para buscar vozes brasileiras.' } });
+  });
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('button', { name: 'Buscar voz JARVIS brasileira' }).click();
+  await expect(page.getByRole('region', { name: 'Vozes brasileiras encontradas' })).toContainText('alternativas brasileiras');
+  await page.getByRole('button', { name: 'Buscar voz JARVIS brasileira' }).click();
+  await expect(page.getByRole('region', { name: 'Vozes brasileiras encontradas' })).toContainText('Não encontrei vozes brasileiras');
+  await expect(page.getByRole('button', { name: 'Usar Voz brasileira de teste' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Buscar voz JARVIS brasileira' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Voices → Read');
+});
+
+test('consulta saldo esgotado sem áudio e permite usar a voz do aparelho sem chamadas ElevenLabs', async ({ page }) => {
+  let clips = 0;
+  await page.route('**/api/speech/quota', route => route.fulfill({ json: { used: 1000, limit: 1000, remaining: 0, nextResetAt: '2026-11-01T00:00:00.000Z' } }));
+  await page.route('**/api/speech', route => { clips++; return route.fulfill({ status: 429, json: { error: 'A cota gratuita de voz foi atingida. Use a voz do aparelho.' } }); });
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('button', { name: 'Consultar cota de voz' }).click();
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('Cota da conta esgotada');
+  await expect(page.getByRole('dialog')).toContainText('Renovação informada pelo ElevenLabs');
+  await expect(page.getByRole('dialog')).toContainText('A chave pode ter um limite menor'); expect(clips).toBe(0);
+  await page.getByRole('button', { name: 'Usar voz do aparelho · sem cota ElevenLabs' }).click();
+  await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('browser');
+  await page.getByRole('button', { name: 'Testar voz', exact: true }).click();
+  const utterance = await page.evaluate(() => {
+    const data = (window as unknown as { voiceTest: { utterance: SpeechSynthesisUtterance } }).voiceTest.utterance;
+    return { text: data.text, lang: data.lang, rate: data.rate };
+  });
+  expect(utterance).toEqual({ text: 'Bom dia, senhor. Sou o Jarvis. Estou pronto para ajudar. Qual é a nossa prioridade hoje?', lang: 'pt-BR', rate: 0.94 }); expect(clips).toBe(0);
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Tipo de voz', exact: true })).toHaveValue('browser');
+});
+
+test('saldo positivo e falha de consulta não são apresentados como créditos ilimitados', async ({ page }) => {
+  let calls = 0;
+  await page.route('**/api/speech/quota', route => ++calls === 1 ? route.fulfill({ json: { used: 100, limit: 1000, remaining: 900 } })
+    : route.fulfill({ status: 503, json: { error: 'A chave ElevenLabs precisa de User → Read para verificar o plano e a cota.' } }));
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('button', { name: 'Consultar cota de voz' }).click();
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('900 de 1.000 caracteres');
+  await page.getByRole('button', { name: 'Consultar cota de voz' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('User → Read');
+  await expect(page.getByRole('dialog').getByRole('status')).toHaveCount(0);
 });

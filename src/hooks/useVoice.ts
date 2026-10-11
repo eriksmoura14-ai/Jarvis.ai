@@ -227,7 +227,7 @@ function useNativeSpeechOutput(profile: SpeechProfile) {
         ?? available.find(voice => voice.lang.toLowerCase() === 'pt-br')
         ?? available.find(voice => voice.lang.toLowerCase().startsWith('pt'));
       if (chosen) { utterance.voice = chosen; utterance.lang = chosen.lang; }
-      utterance.rate = profile === 'british' ? 0.94 : 1;
+      utterance.rate = profile !== 'natural' ? 0.94 : 1;
       let timeout: ReturnType<typeof setTimeout>;
       const complete = (outcome: SpeechOutcome) => {
         clearTimeout(timeout);
@@ -280,7 +280,7 @@ function useNativeSpeechOutput(profile: SpeechProfile) {
 type SpeechEngine = 'auto' | 'browser' | 'elevenlabs';
 export function useSpeechOutput(cloudAvailable = false) {
   const [profile, setProfile] = useState<SpeechProfile>(() => {
-    try { return localStorage.getItem('jarvis.speech-profile.v1') === 'natural' ? 'natural' : 'british'; } catch { return 'british'; }
+    try { const saved = localStorage.getItem('jarvis.speech-profile.v2'); return saved === 'natural' || saved === 'british' ? saved : 'jarvis-br'; } catch { return 'jarvis-br'; }
   });
   const [cloudVoiceId, setCloudVoiceId] = useState(() => {
     try { const id = localStorage.getItem('jarvis.cloud-voice.v1') ?? ''; return VOICE_ID_PATTERN.test(id) ? id : ''; } catch { return ''; }
@@ -421,7 +421,7 @@ export function useSpeechOutput(cloudAvailable = false) {
   };
   const chooseProfile = (value: SpeechProfile) => {
     stop(); cached.current.clear(); setProfile(value); setError(''); setNotice('');
-    try { localStorage.setItem('jarvis.speech-profile.v1', value); } catch { /* Session preference still works. */ }
+    try { localStorage.setItem('jarvis.speech-profile.v2', value); } catch { /* Session preference still works. */ }
   };
   const chooseCloudVoice = (value: string) => {
     const id = value.trim();
@@ -433,7 +433,7 @@ export function useSpeechOutput(cloudAvailable = false) {
   useEffect(() => () => { stop(); cached.current.clear(); }, [stop]);
   return { ...native, supported: native.supported || cloudAvailable, busy: busy || native.busy,
     speaking: speaking || native.speaking, error: error || native.error, notice, timings, engine, chooseEngine, cloudAvailable,
-    profile, chooseProfile, cloudVoiceId, chooseCloudVoice, speak, prepare, stop };
+    nativeAvailable: native.supported, profile, chooseProfile, cloudVoiceId, chooseCloudVoice, speak, prepare, stop };
 }
 
 export function useSpeechInterrupt(enabled: boolean, spokenText: string, onInterrupt: () => void) {
