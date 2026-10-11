@@ -22,6 +22,53 @@ async function setup(extra: Parameters<typeof buildApp>[0] = {}) {
   return { app, chat, data, headers, importFiles };
 }
 describe('interpretação com dados pessoais atuais', () => {
+  it.each([false, true])('responde aos objetivos registrados quando a IA nega os dados fornecidos, stream=%s', async stream => {
+    const refusal = 'Não tenho detalhes suficientes sobre os seus objetivos futuros. Você pode me dizer quais são ou indicar a nota onde eles estão descritos?';
+    const prompts: { messages: { role: string; content: string }[]; tools?: { function: { name: string } }[] }[] = [];
+    const modelFetch = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)); prompts.push(body);
+      return body.stream ? new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: refusal }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n') : text(refusal);
+    });
+    const searchFetch = vi.fn<typeof fetch>();
+    const { chat, importFiles, data } = await setup({ ai, modelFetch, searchFetch, aiDailyLimit: 2 });
+    await importFiles([{ path: 'Planejamento/Metas.md', content: '# Metas e cronograma\n## Metas registradas e situação conhecida\n| Meta | Horizonte discutido | Situação recuperada |\n|---|---|---|\n| Aprender Rust | Futuro, ciclo a confirmar | Plano, sem curso concluído |\n| Documentar uma API | Futuro, prazo a confirmar | Planejado, sem publicação confirmada |' },
+      ...Array.from({ length: 4 }, (_, i) => ({ path: `Projetos/Projeto-${i}.md`, content: `# Projeto ${i}\n## Objetivo futuro\nPreparar uma demonstração ${i}. Ainda é um plano.` }))]);
+    await chat('Você já conhece meu planejamento?'); // an older refusal must not override fresh evidence
+    const before = await data();
+    const response = await chat('quais sao meus futuros objetivos', { webSearch: true, stream, voice: true });
+    const result = stream ? response.body.trim().split('\n').map(line => JSON.parse(line)).at(-1).response : response.json();
+    expect(result).toMatchObject({ provider: 'local', command: 'knowledge', message: expect.stringContaining('Aprender Rust') });
+    expect(result.message).toContain('Plano, sem curso concluído'); expect(result.message).toContain('Documentar uma API');
+    expect(result.message).not.toContain('Não tenho detalhes suficientes'); expect(result.message).toContain('não uma confirmação');
+    expect(result.knowledgeSources).toHaveLength(5); expect(validKnowledgeSources(result.knowledgeSources)).toBe(true);
+    const actual = result.knowledgeSources.find((source: { path: string }) => source.path === 'Planejamento/Metas.md');
+    expect(result.message).toContain(`[${actual.reference}]`);
+    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).not.toHaveBeenCalled();
+    const sent = prompts[1];
+    expect(sent.messages.some(message => message.role === 'assistant' && message.content === refusal)).toBe(true);
+    expect(sent.messages.at(-2)).toMatchObject({ role: 'user', content: expect.stringContaining('Plano, sem curso concluído') });
+    expect(sent.messages.at(-1)).toMatchObject({ role: 'user', content: 'quais sao meus futuros objetivos' });
+    expect(sent.messages[0].content).toContain('Não confunda falta de confirmação da conclusão');
+    expect(sent.tools?.some(tool => tool.function.name === 'search_web')).toBe(false);
+    const after = await data(); expect(after.library).toEqual(before.library);
+    expect(after.history.at(-1).content).toBe(result.message); expect(after.history.at(-1).knowledgeSources).toEqual(result.knowledgeSources);
+  });
+  it('aplica a leitura fiel também depois de read_notes, sem uma terceira chamada', async () => {
+    let id = '';
+    const modelFetch = vi.fn<typeof fetch>().mockImplementationOnce(async () => reading([id]))
+      .mockImplementationOnce(async () => text('Não tenho informações suficientes sobre seus objetivos. Indique uma nota.'));
+    const searchFetch = vi.fn<typeof fetch>();
+    const { chat, importFiles, data } = await setup({ ai, modelFetch, searchFetch, aiDailyLimit: 2 });
+    await importFiles([{ path: 'Direcao.md', content: '# Metas pessoais\n| Meta | Horizonte | Situação |\n|---|---|---|\n| Aprender Rust | Ciclo a confirmar | Plano, sem curso concluído |' }]);
+    id = (await data()).library[0].id;
+    const result = (await chat('quais sao meus futuros objetivos', { webSearch: true })).json();
+    expect(result).toMatchObject({ provider: 'local', command: 'knowledge', message: expect.stringContaining('Aprender Rust'), knowledgeSources: [{ id, path: 'Direcao.md' }] });
+    const first = JSON.parse(String(modelFetch.mock.calls[0][1]?.body)); const final = JSON.parse(String(modelFetch.mock.calls[1][1]?.body));
+    expect(first.messages.some((message: { content: string }) => message.content.includes('Plano, sem curso concluído'))).toBe(false);
+    expect(final.messages.at(-2).content).toContain('Plano, sem curso concluído'); expect(final.tools).toBeUndefined();
+    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).not.toHaveBeenCalled();
+    expect((await data()).history.at(-1).content).toBe(result.message);
+  });
   it('lista títulos reais para o pedido do print e esclarece uma fonte sem assunto', async () => {
     const modelFetch = vi.fn<typeof fetch>(); const searchFetch = vi.fn<typeof fetch>();
     const { chat, importFiles } = await setup({ ai, modelFetch, searchFetch });
@@ -71,7 +118,7 @@ describe('interpretação com dados pessoais atuais', () => {
     expect(validKnowledgeSources(result.knowledgeSources)).toBe(true); expect(result.message).not.toContain('[N99]');
     expect(result.knowledgePlan).toBeUndefined(); expect(modelFetch).toHaveBeenCalledTimes(2); expect(prompts[1].tools).toBeUndefined();
     expect(prompts[0].messages[0].content).not.toContain('Revisar componentes nesta semana'); // title catalog only, no lexical match
-    expect(prompts[1].messages[0].content).toContain('Revisar componentes nesta semana');
+    expect(prompts[1].messages.at(-2)?.content).toContain('Revisar componentes nesta semana');
     expect(searchFetch).not.toHaveBeenCalled();
     expect((await data()).history.at(-1).knowledgeSources[0].id).toBe(id);
   });

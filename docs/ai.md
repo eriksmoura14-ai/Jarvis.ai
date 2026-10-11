@@ -136,3 +136,7 @@ sem telemetria externa ou promessas de aceleração medidas apenas com fixtures.
 ## Contexto do Obsidian
 
 No modo pessoal, [notas Markdown importadas](obsidian.md) podem fornecer até cinco trechos pertinentes para a IA. São dados privados, tratados como conteúdo de consulta, sem permissão para executar instruções ou modificar arquivos. O backend gera referências reais `[N1]` e não oferece pesquisa pública em consultas explícitas à biblioteca. Não há nova chave, modelo de embeddings ou migração SQL.
+
+Os trechos atuais são enviados depois do histórico, antes da pergunta, para que uma negativa anterior não esconda os registros disponíveis. A síntese deve informar o que as notas sustentam e esclarecer apenas o que falta: um objetivo planejado não precisa estar concluído para poder ser descrito como plano.
+
+Se o modelo der uma negativa genérica a uma pergunta ampla sobre objetivos e houver uma tabela explícita de metas pessoais nos trechos atuais, o servidor pode retornar uma leitura local dessas linhas, com referências, horizontes e situações originais. Ela aparece como resposta **Local**, sem nova chamada de IA. Essa alternativa não interpreta perguntas específicas sobre prioridades ou datas, não transforma notas gerais em metas pessoais e não inventa conteúdo fora dos trechos. Não é treinamento do modelo nem uma confirmação de realizações. Sem registros suficientes, o esclarecimento continua necessário.

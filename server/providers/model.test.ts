@@ -91,11 +91,12 @@ describe('conexões de modelo', () => {
     expect(first.messages[0].content).toContain(catalog[50].id);
     expect(final.messages[0].content).not.toContain('Catálogo atual');
     expect(final.messages[0].content).not.toContain(catalog[50].title);
-    expect(final.messages[0].content).toContain(source.excerpt);
-    expect(final.messages[0].content).toContain(source.path);
-    expect(final.messages[0].content).toContain('"reference":"N1"');
+    expect(final.messages.at(-2)).toMatchObject({ role: 'user', content: expect.stringContaining(source.excerpt) });
+    expect(final.messages.at(-2).content).toContain(source.path);
+    expect(final.messages.at(-2).content).toContain('"reference":"N1"');
+    expect(final.messages[0].content).not.toContain(source.excerpt);
     expect(final.messages[0].content).toContain('não leitura completa do cofre');
-    expect(final.messages[0].content.length).toBeLessThan(first.messages[0].content.length);
+    expect(JSON.stringify(final.messages).length).toBeLessThan(JSON.stringify(first.messages).length);
     expect(final.tools).toBeUndefined();
   });
   it.each([{}, { choices: [] }, { choices: [{ message: { content: ' ' } }] }])('rejeita respostas vazias %j', async data => {

@@ -93,7 +93,7 @@ describe('biblioteca Markdown pessoal', () => {
     const { chat, importFiles, app, headers, data } = await setup({ ai, modelFetch, searchFetch }); await importFiles();
     const first = (await chat('O que eu já estudei sobre React no meu Obsidian?', { webSearch: true })).json();
     expect(first.knowledgeSources[0]).toMatchObject({ path: file.path, id: (await data()).library[0].id }); expect(first.message).not.toContain('[N99]');
-    expect(prompts[0].messages[0].content).toContain('useEffect sincroniza'); expect(prompts[0].tools.map(tool => tool.function.name)).not.toContain('search_web');
+    expect(prompts[0].messages.at(-2)?.content).toContain('useEffect sincroniza'); expect(prompts[0].tools.map(tool => tool.function.name)).not.toContain('search_web');
     const second = (await chat('E como isso ajuda meu projeto?', { webSearch: true })).json(); expect(second.knowledgeSources.length).toBeGreaterThan(0);
     const third = (await chat('Explique mais detalhes disso.', { webSearch: true })).json(); expect(third.knowledgeSources.length).toBeGreaterThan(0);
     expect(prompts.at(-1)!.tools.map(tool => tool.function.name)).not.toContain('search_web');
