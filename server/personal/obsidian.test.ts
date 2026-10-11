@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { sessionHash, PersonalStore, SQLiteDocument } from './store.js';
 import { NoteStore } from '../database.js';
-import type { SyncRequest } from '../../shared/obsidian.js';
+import { MAX_SYNC_REQUEST_BYTES, type SyncRequest } from '../../shared/obsidian.js';
+import { MAX_IMPORT_BYTES, MAX_KNOWLEDGE_NOTES } from '../../shared/knowledge.js';
 const apps: FastifyInstance[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); });
 const password = 'fixture-obsidian-password-123';
@@ -20,6 +21,21 @@ async function setup() {
   return { app, headers, grant, deviceHeaders, create, sync, data, edit };
 }
 describe('conexão Obsidian pessoal', () => {
+  it('aceita 1.000 caminhos UTF-8 e 250 KB escapados sem ampliar o lote de notas', async () => {
+    const { sync, data, app, deviceHeaders } = await setup();
+    const known = Array.from({ length: MAX_KNOWLEDGE_NOTES }, (_, index) => ({ path: `${'库'.repeat(220)}-${index}.md`, hash: sessionHash('antiga') }));
+    const changes = Array.from({ length: 5 }, (_, index) => ({ path: `Escapada-${index}.md`, content: '"'.repeat(50_000), baseHash: null }));
+    const payload = { changes, known };
+    expect(changes.reduce((sum, note) => sum + Buffer.byteLength(note.content), 0)).toBe(MAX_IMPORT_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeGreaterThan(800_000);
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(MAX_SYNC_REQUEST_BYTES);
+    const response = await sync(payload); expect(response.statusCode).toBe(200); expect(response.json().acknowledged).toHaveLength(5);
+    expect((await sync({ changes: [], known: [...known, { path: 'Excesso.md', hash: sessionHash('texto') }] })).statusCode).toBe(400);
+    expect((await sync({ changes: Array.from({ length: 21 }, (_, index) => ({ ...file, path: `Lote-${index}.md`, baseHash: null })), known: [] })).statusCode).toBe(400);
+    expect((await sync({ changes: [...changes, { ...file, baseHash: null }], known: [] })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: '/api/obsidian/sync', headers: { ...deviceHeaders, 'content-type': 'application/json' }, payload: JSON.stringify({ extra: 'a'.repeat(MAX_SYNC_REQUEST_BYTES) }) })).statusCode).toBe(413);
+    expect((await data()).library).toHaveLength(5);
+  });
   it('usa chave independente, com escopo apenas da biblioteca, e revogação imediata', async () => {
     const { app, headers, deviceHeaders, grant, sync } = await setup();
     const body = { changes: [{ ...file, baseHash: null }], known: [] };

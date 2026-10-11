@@ -41,3 +41,30 @@ test('editor envia mudança ao plugin e preserva rascunho quando outro aparelho 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(unsaved);
 });
+
+test('sincroniza 121 notas em lotes e mostra capacidade ampliada preservando a primeira cópia', async ({ page }) => {
+  await enter(page);
+  const grant = await (await page.request.post('/api/personal/obsidian/devices', { headers, data: { name: 'Cofre maior' } })).json();
+  const deviceHeaders = { ...headers, Authorization: `Bearer ${grant.token}` };
+  const original = { path: 'Objetivos/Antiga.md', content: '# Nota antiga\nObjetivo já importado.', baseHash: null };
+  expect((await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: { changes: [original], known: [] } })).status()).toBe(200);
+  const before = await (await page.request.get('/api/personal/data')).json(); const originalSummary = before.library.find((note: { path: string }) => note.path === original.path);
+  const notes = Array.from({ length: 120 }, (_, index) => ({ path: `Objetivos/Nota-${index}.md`, content: `# Objetivo ${index}\nEstudar e registrar o plano ${index}.`, baseHash: null }));
+  const known = [{ path: original.path, hash: hash(original.content) }];
+  for (let offset = 0; offset < notes.length; offset += 20) {
+    const changes = notes.slice(offset, offset + 20);
+    const response = await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: { changes, known } });
+    expect(response.status()).toBe(200); const result = await response.json(); expect(result.conflicts).toEqual([]); expect(result.acknowledged).toHaveLength(20);
+    known.push(...result.acknowledged);
+  }
+  const idle = await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: { changes: [], known } });
+  expect(idle.status()).toBe(200); expect((await idle.json()).updates).toEqual([]);
+  const after = await (await page.request.get('/api/personal/data')).json();
+  expect(after.library).toHaveLength(before.library.length + 120); expect(after.library.find((note: { id: string }) => note.id === originalSummary.id)).toEqual(originalSummary);
+  for (const note of before.library) expect(after.library).toContainEqual(note);
+  await page.reload(); await page.getByRole('button', { name: 'Notas do Obsidian', exact: true }).click();
+  await expect(page.getByText(/\d+ de 1\.000 notas.*MB de 10 MB/)).toContainText(`${before.library.length + 120} de 1.000 notas`);
+  await page.getByRole('button', { name: 'Objetivo 119 Objetivos/Nota-119.md', exact: true }).click();
+  await expect(page.getByRole('article', { name: 'Nota Objetivo 119', exact: true })).toContainText('registrar o plano 119');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

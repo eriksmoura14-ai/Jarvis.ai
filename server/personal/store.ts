@@ -4,13 +4,16 @@ import type { NoteStore } from '../database.js';
 import { conversationContext } from '../../shared/context.js';
 import { memorySlot, personalProfile, sameMemory } from '../../shared/memory.js';
 import { MAX_PROJECTS, MAX_TASKS, validChange, type PersonalProject, type ProjectChange } from '../../shared/projects.js';
-import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, validMarkdownFiles, byteLength, pathKey, type KnowledgeNote, type MarkdownFile } from '../../shared/knowledge.js';
+import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, KNOWLEDGE_CAPACITY_LABEL, MAX_IMPORT_FILES, validMarkdownFiles, byteLength, pathKey, type KnowledgeNote, type MarkdownFile } from '../../shared/knowledge.js';
 import { markdownTitle } from './knowledge-index.js';
 import { normalizeMarkdown, validSyncRequest, type SyncRequest, type SyncResponse, type ObsidianDevice } from '../../shared/obsidian.js';
 
 export class PersonalError extends Error {
   constructor(message: string, readonly statusCode = 503) { super(message); }
 }
+// 10 MB of note text can grow when JSON-escaped; also allow note metadata,
+// history, memories and projects in the same existing private document.
+export const MAX_PERSONAL_DOCUMENT_BYTES = 32_000_000;
 interface Document {
   history: Message[]; memories: PersonalMemory[]; notes: { content: string }[];
   generation: number; usage: { day: string; count: number };
@@ -48,14 +51,16 @@ export class SupabaseDocument implements DocumentBackend {
   }
   private async request(path: string, method = 'GET', body?: unknown, prefer?: string): Promise<unknown[]> {
     try {
-      const response = await this.transport(this.endpoint + path, { method, redirect: 'error', signal: AbortSignal.timeout(5000),
+      const serialized = body ? JSON.stringify(body) : undefined;
+      if (serialized && Buffer.byteLength(serialized, 'utf8') > MAX_PERSONAL_DOCUMENT_BYTES) throw new Error('storage');
+      const response = await this.transport(this.endpoint + path, { method, redirect: 'error', signal: AbortSignal.timeout(10_000),
         headers: { apikey: this.key, ...(this.key.startsWith('sb_secret_') ? {} : { Authorization: `Bearer ${this.key}` }),
-          'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+          'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {}) }, ...(serialized ? { body: serialized } : {}) });
       if (!response.ok) { await response.body?.cancel(); throw new Error('storage'); }
       if (!response.body) throw new Error('storage');
       const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
       try {
-        for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 4_000_000) throw new Error('storage'); chunks.push(value); }
+        for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_PERSONAL_DOCUMENT_BYTES) throw new Error('storage'); chunks.push(value); }
       } finally { await reader.cancel().catch(() => {}); }
       const data: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (!Array.isArray(data)) throw new Error('storage');
@@ -77,8 +82,8 @@ export class SupabaseDocument implements DocumentBackend {
   }
   async write(value: Document, version: number, key: 'owner' | 'sessions' = 'owner') {
     const rows = version === 0
-      ? await this.request('?on_conflict=id', 'POST', { id: key, value, version: 1 }, 'resolution=ignore-duplicates,return=representation')
-      : await this.request(`?id=eq.${key}&version=eq.${version}`, 'PATCH', { value, version: version + 1 }, 'return=representation');
+      ? await this.request('?on_conflict=id&select=version', 'POST', { id: key, value, version: 1 }, 'resolution=ignore-duplicates,return=representation')
+      : await this.request(`?id=eq.${key}&version=eq.${version}&select=version`, 'PATCH', { value, version: version + 1 }, 'return=representation');
     return rows.length === 1;
   }
 }
@@ -119,7 +124,7 @@ export class PersonalStore implements NoteRepository {
         const note = { id: existing?.id ?? randomUUID(), path, content, title: markdownTitle({ path, content }), bytes: byteLength(content), revision: (existing?.revision ?? 0) + 1, updatedAt: now };
         if (existing) { notes[index] = note; updated++; } else { notes.push(note); added++; }
       }
-      if (notes.length > MAX_KNOWLEDGE_NOTES || notes.reduce((sum, note) => sum + note.bytes, 0) > MAX_LIBRARY_BYTES) throw new PersonalError('A biblioteca permite até 100 notas e 1 MB de texto. Remova cópias que não precisa antes de importar.', 409);
+      if (notes.length > MAX_KNOWLEDGE_NOTES || notes.reduce((sum, note) => sum + note.bytes, 0) > MAX_LIBRARY_BYTES) throw new PersonalError(`A biblioteca permite até ${KNOWLEDGE_CAPACITY_LABEL} de texto. Remova cópias que não precisa antes de importar.`, 409);
       if (added || updated) { value.knowledge = notes; value.libraryRevision = (value.libraryRevision ?? 0) + 1; this.resetContext(value); }
       return { ok: true, added, updated, unchanged };
     });
@@ -132,13 +137,13 @@ export class PersonalStore implements NoteRepository {
       if (!validMarkdownFiles([{ path: note.path, content }])) throw new PersonalError('Use texto Markdown UTF-8 não vazio, até 50 KB.', 400);
       const normalized = normalizeMarkdown(content);
       if (normalized === note.content) return { ok: true };
-      if (notes.reduce((sum, item) => sum + item.bytes, 0) - note.bytes + byteLength(normalized) > MAX_LIBRARY_BYTES) throw new PersonalError('A biblioteca atingiu o limite de 1 MB.', 409);
+      if (notes.reduce((sum, item) => sum + item.bytes, 0) - note.bytes + byteLength(normalized) > MAX_LIBRARY_BYTES) throw new PersonalError(`A biblioteca atingiu o limite de ${MAX_LIBRARY_BYTES / 1_000_000} MB.`, 409);
       Object.assign(note, { content: normalized, bytes: byteLength(normalized), title: markdownTitle({ path: note.path, content: normalized }), revision: note.revision + 1, updatedAt: new Date().toISOString() });
       value.libraryRevision = (value.libraryRevision ?? 0) + 1; this.resetContext(value); return { ok: true };
     });
   }
   async syncKnowledge(input: SyncRequest): Promise<SyncResponse> {
-    if (!validSyncRequest(input)) throw new PersonalError('Lote de sincronização inválido: até 20 notas/250 KB e 100 caminhos conhecidos.', 400);
+    if (!validSyncRequest(input)) throw new PersonalError(`Lote de sincronização inválido: até 20 notas/250 KB e ${MAX_KNOWLEDGE_NOTES.toLocaleString('pt-BR')} caminhos conhecidos.`, 400);
     for (let attempt = 0; attempt < 6; attempt++) {
       const row = await this.backend.read(); const value = row.value; const notes = value.knowledge ?? [];
       const result: SyncResponse = { acknowledged: [], updates: [], conflicts: [], libraryRevision: value.libraryRevision ?? 0 };
@@ -163,7 +168,7 @@ export class PersonalStore implements NoteRepository {
         if (incoming.has(pathKey(known.path))) continue;
         const note = notes.find(note => pathKey(note.path) === pathKey(known.path));
         // Never propagate deletions into the phone.
-        if (note && sessionHash(note.content) !== known.hash && result.updates.length < 20) result.updates.push({ path: known.path, content: note.content, hash: sessionHash(note.content) });
+        if (note && sessionHash(note.content) !== known.hash && result.updates.length < MAX_IMPORT_FILES) result.updates.push({ path: known.path, content: note.content, hash: sessionHash(note.content) });
       }
       if (!changed) return result; // Idle polls do not rewrite the Supabase document.
       value.knowledge = notes; value.libraryRevision = result.libraryRevision + 1; result.libraryRevision = value.libraryRevision; this.resetContext(value);

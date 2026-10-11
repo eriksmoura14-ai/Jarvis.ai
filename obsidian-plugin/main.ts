@@ -1,6 +1,6 @@
 import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFile, requestUrl, type App, type ToggleComponent } from 'obsidian';
-import { inVaultScope, validVaultFolder, validHash, normalizeMarkdown, type SyncRequest } from '../shared/obsidian';
-import { validMarkdownPath } from '../shared/knowledge';
+import { inVaultScope, validVaultFolder, validHash, normalizeMarkdown, restoredBaselines, type SyncRequest } from '../shared/obsidian';
+import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, MAX_NOTE_BYTES, KNOWLEDGE_CAPACITY_LABEL } from '../shared/knowledge';
 import { SyncEngine, type VaultBridge } from './sync-engine';
 interface Settings { url: string; token: string; folder: string; enabled: boolean; writeback: boolean; baselines: Record<string, string> }
 const defaults: Settings = { url: 'https://jarvis-ai-dwqp.onrender.com', token: '', folder: '', enabled: false, writeback: false, baselines: {} };
@@ -14,7 +14,7 @@ export default class JarvisPlugin extends Plugin {
   private tab!: JarvisSettingsTab; private debounce?: number; private unloaded = false;
   async onload() {
     const saved = await this.loadData() as Partial<Settings> | null;
-    this.settings = { ...defaults, ...saved, baselines: Object.fromEntries(Object.entries(saved?.baselines ?? {}).filter(([path, hash]) => validMarkdownPath(path) && validHash(hash)).slice(0, 100)) };
+    this.settings = { ...defaults, ...saved, baselines: restoredBaselines(saved?.baselines) };
     this.tab = new JarvisSettingsTab(this.app, this); this.addSettingTab(this.tab);
     this.addCommand({ id: 'sync', name: 'Sincronizar cofre com JARVIS', callback: () => void this.sync(true) });
     const schedule = () => {
@@ -42,9 +42,9 @@ export default class JarvisPlugin extends Plugin {
     const bridge: VaultBridge = {
       readFiles: async folder => {
         const files = vault.getMarkdownFiles().filter(file => inVaultScope(file.path, folder));
-        if (files.length > 100) throw new Error('Escolha uma pasta com até 100 notas.');
-        if (files.filter(file => file.stat.size <= 50_000).reduce((sum, file) => sum + file.stat.size, 0) > 1_000_000) throw new Error('Escolha uma pasta com até 1 MB de notas.');
-        return Promise.all(files.map(async file => ({ path: file.path, content: file.stat.size > 50_000 ? '' : await vault.read(file) })));
+        if (files.length > MAX_KNOWLEDGE_NOTES) throw new Error(`Escolha uma pasta com até ${KNOWLEDGE_CAPACITY_LABEL}.`);
+        if (files.filter(file => file.stat.size <= MAX_NOTE_BYTES).reduce((sum, file) => sum + file.stat.size, 0) > MAX_LIBRARY_BYTES) throw new Error(`Escolha uma pasta com até ${KNOWLEDGE_CAPACITY_LABEL}.`);
+        return Promise.all(files.map(async file => ({ path: file.path, content: file.stat.size > MAX_NOTE_BYTES ? '' : await vault.read(file) })));
       },
       read: path => vault.read(fileAt(path)),
       backup: async (path, content) => {
@@ -115,7 +115,7 @@ class JarvisSettingsTab extends PluginSettingTab {
   updateStatus() {
     this.statusEl?.setText(this.plugin.status); this.conflictsEl?.empty();
     if (this.conflictsEl) for (const conflict of this.plugin.engine?.conflicts.values() ?? []) {
-      new Setting(this.conflictsEl).setName(conflict.path).setDesc(conflict.reason === 'limit' ? 'Limite atingido. Libere espaço antes de tentar novamente.' : 'Duas versões diferentes. Compare antes de substituir.').addButton(button => button.setButtonText('Comparar').onClick(() => new ConflictModal(this.app, this.plugin, conflict.path).open())).addButton(button => button.setButtonText('Tentar novamente').onClick(() => { this.plugin.engine?.retry(conflict.path); void this.plugin.sync(true); }));
+      new Setting(this.conflictsEl).setName(conflict.path).setDesc(conflict.reason === 'limit' ? `A biblioteca permite até ${KNOWLEDGE_CAPACITY_LABEL}. Confira o uso no JARVIS e tente novamente; libere espaço se estiver cheia.` : 'Duas versões diferentes. Compare antes de substituir.').addButton(button => button.setButtonText('Comparar').onClick(() => new ConflictModal(this.app, this.plugin, conflict.path).open())).addButton(button => button.setButtonText('Tentar novamente').onClick(() => { this.plugin.engine?.retry(conflict.path); void this.plugin.sync(true); }));
     }
   }
   display() {
@@ -128,7 +128,7 @@ class JarvisSettingsTab extends PluginSettingTab {
     });
     input('Endereço do JARVIS', 'url', 'Somente HTTPS; exemplo: https://jarvis-ai-dwqp.onrender.com');
     input('Chave de vinculação', 'token', 'JARVIS → Biblioteca → Conectar Obsidian. Não use senha pessoal, chave Supabase ou chave da IA. Guardada localmente em data.json: não compartilhe este arquivo. Expira em 180 dias e pode ser revogada.');
-    input('Pasta do cofre', 'folder', 'Vazio inclui todo o cofre. Exemplo: 02 Estudos. Até 100 notas/1 MB. Arquivos vazios ou acima de 50 KB, anexos e pastas ocultas são ignorados. Mudar esta opção inicia uma nova comparação, sem substituir versões diferentes.');
+    input('Pasta do cofre', 'folder', `Vazio inclui todo o cofre. Exemplo: 02 Estudos. Até ${KNOWLEDGE_CAPACITY_LABEL}. Arquivos vazios ou acima de 50 KB, anexos e pastas ocultas são ignorados. Mudar esta opção inicia uma nova comparação, sem substituir versões diferentes.`);
     new Setting(containerEl).setName('Ativar sincronização').setDesc('Autoriza o envio de notas. A cada 30 segundos e após edições, até 20 notas/250 KB por ciclo.').addToggle(toggle => { this.enabledToggle = toggle; toggle.setValue(this.plugin.settings.enabled).onChange(async value => { this.plugin.settings.enabled = value; this.plugin.engine?.stop(); this.plugin.engine = undefined; await this.plugin.saveSettings(); if (value) void this.plugin.sync(true); }); });
     new Setting(containerEl).setName('Receber alterações do JARVIS').setDesc('Permite gravar no cofre as edições feitas pelo navegador. Backup obrigatório em .jarvis-backups antes de substituir; arquivos nunca são excluídos.').addToggle(toggle => toggle.setValue(this.plugin.settings.writeback).onChange(async value => { this.plugin.settings.writeback = value; await this.plugin.saveSettings(); }));
     new Setting(containerEl).setName('Sincronizar agora').addButton(button => button.setButtonText('Sincronizar').onClick(() => void this.plugin.sync(true)));

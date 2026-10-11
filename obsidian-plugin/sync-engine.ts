@@ -1,4 +1,4 @@
-import { byteLength, MAX_IMPORT_BYTES, validMarkdownFiles, pathKey, type MarkdownFile } from '../shared/knowledge';
+import { byteLength, MAX_IMPORT_BYTES, MAX_IMPORT_FILES, MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, KNOWLEDGE_CAPACITY_LABEL, validMarkdownFiles, pathKey, type MarkdownFile } from '../shared/knowledge';
 import { inVaultScope, normalizeMarkdown, validHash, validSyncResponse, type SyncRequest, type SyncResponse, type SyncConflict, type SyncFile } from '../shared/obsidian';
 export interface VaultBridge {
   readFiles(folder: string): Promise<MarkdownFile[]>;
@@ -53,7 +53,7 @@ export class SyncEngine {
     try {
       const read = await this.vault.readFiles(this.folder); this.active();
       const eligible = read.filter(file => inVaultScope(file.path, this.folder));
-      if (eligible.length > 100 || eligible.reduce((sum, file) => sum + byteLength(file.content), 0) > 1_000_000) throw new Error('Escolha uma pasta menor: até 100 notas e 1 MB.');
+      if (eligible.length > MAX_KNOWLEDGE_NOTES || eligible.reduce((sum, file) => sum + byteLength(file.content), 0) > MAX_LIBRARY_BYTES) throw new Error(`Escolha uma pasta menor: até ${KNOWLEDGE_CAPACITY_LABEL}.`);
       if (new Set(eligible.map(file => pathKey(file.path))).size !== eligible.length) throw new Error('Há nomes de notas equivalentes. Renomeie antes de sincronizar.');
       const files = eligible.filter(file => validMarkdownFiles([file]));
       const ignored = eligible.length - files.length;
@@ -62,7 +62,7 @@ export class SyncEngine {
         const hash = await contentHash(file.content); this.active();
         const baseline = validHash(this.state.baselines[file.path]) ? this.state.baselines[file.path] : null;
         if (hash === baseline) known.push({ path: file.path, hash });
-        else if (!this.conflicts.has(file.path) && changes.length < 20 && bytes + byteLength(file.content) <= MAX_IMPORT_BYTES) {
+        else if (!this.conflicts.has(file.path) && changes.length < MAX_IMPORT_FILES && bytes + byteLength(file.content) <= MAX_IMPORT_BYTES) {
           changes.push({ ...file, baseHash: baseline }); bytes += byteLength(file.content);
         }
       }

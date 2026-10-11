@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { PersonalSnapshot } from '../../shared/contracts';
-import { MAX_IMPORT_FILES, MAX_IMPORT_BYTES, MAX_NOTE_BYTES, pathKey, validMarkdownFiles, validKnowledgeSummary, validKnowledgeSources, type KnowledgeNote, type KnowledgeSource, type MarkdownFile } from '../../shared/knowledge';
+import { MAX_IMPORT_FILES, MAX_IMPORT_BYTES, MAX_NOTE_BYTES, MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, pathKey, validMarkdownFiles, validKnowledgeSummary, validKnowledgeSources, type KnowledgeNote, type KnowledgeSource, type MarkdownFile } from '../../shared/knowledge';
 import { ObsidianConnection } from './ObsidianConnection';
 import { personalRequest } from '../lib/personal';
 
@@ -112,7 +112,7 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
     <form className="knowledge-search" onSubmit={event => void search(event)}><label htmlFor="knowledge-query">Buscar nas notas importadas</label><input data-gamepad id="knowledge-query" maxLength={500} value={query} disabled={disabled} onChange={event => setQuery(event.target.value)} placeholder="React, inglês, ideias do projeto…" /><button data-gamepad className="secondary-button" disabled={disabled || !query.trim()}>Buscar trechos</button></form>
     {resultQuery && <p role="status">{sources.length ? `Trechos encontrados para “${resultQuery}”.` : `Nenhum trecho encontrado para “${resultQuery}”. Tente o título ou palavras do assunto.`}</p>}
     <KnowledgeSources sources={sources} onOpen={(id, revision) => setSelected({ id, revision })} />
-    <p>{library.length} de 100 notas · {(library.reduce((sum, note) => sum + note.bytes, 0) / 1000).toFixed(1)} KB de 1000 KB</p>
+    <p>{library.length.toLocaleString('pt-BR')} de {MAX_KNOWLEDGE_NOTES.toLocaleString('pt-BR')} notas · {(library.reduce((sum, note) => sum + note.bytes, 0) / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB de {MAX_LIBRARY_BYTES / 1_000_000} MB</p>
     {!library.length && <p>Nenhuma nota importada ainda.</p>}
     <ul className="knowledge-list">{library.map(note => <li key={note.id}><button data-gamepad className="secondary-button" disabled={disabled} onClick={() => setSelected({ id: note.id, revision: note.revision })}>{note.title}<small>{note.path}</small></button><button data-gamepad className="secondary-button" disabled={disabled} aria-label={`Remover cópia: ${note.title}`} onClick={() => setRemoving(note.id)}>Remover cópia</button>
       {removing === note.id && <div role="group" aria-label={`Confirmar remoção de ${note.title}`}><p>Remover esta cópia da conta? O original do Obsidian permanece no seu aparelho. Respostas antigas podem conter texto desta nota.</p><button data-gamepad className="secondary-button" disabled={disabled} onClick={() => setRemoving(undefined)}>Cancelar remoção</button><button data-gamepad className="primary-button" disabled={disabled} onClick={() => void remove(note.id)}>Confirmar remoção da cópia</button></div>}

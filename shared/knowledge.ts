@@ -1,6 +1,7 @@
-export const MAX_KNOWLEDGE_NOTES = 100;
+export const MAX_KNOWLEDGE_NOTES = 1_000;
 export const MAX_NOTE_BYTES = 50_000;
-export const MAX_LIBRARY_BYTES = 1_000_000;
+export const MAX_LIBRARY_BYTES = 10_000_000;
+export const KNOWLEDGE_CAPACITY_LABEL = `${MAX_KNOWLEDGE_NOTES.toLocaleString('pt-BR')} notas/${MAX_LIBRARY_BYTES / 1_000_000} MB`;
 export const MAX_IMPORT_FILES = 20;
 export const MAX_IMPORT_BYTES = 250_000;
 export interface MarkdownFile { path: string; content: string }

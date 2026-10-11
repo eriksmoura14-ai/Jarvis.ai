@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { SyncRequest } from '../../shared/obsidian.js';
+import { MAX_SYNC_REQUEST_BYTES, type SyncRequest } from '../../shared/obsidian.js';
 import { PersonalError, type PersonalStore } from './store.js';
 import type { PersonalAuth } from './auth.js';
 export function registerObsidianRoutes(app: FastifyInstance, store: PersonalStore, auth: PersonalAuth) {
@@ -10,6 +10,6 @@ export function registerObsidianRoutes(app: FastifyInstance, store: PersonalStor
   }, request => { if (!request.body.name.trim()) throw new PersonalError('Dê um nome ao aparelho.', 400); return auth.createObsidianDevice(request.body.name); });
   app.delete<{ Params: { id: string } }>('/api/personal/obsidian/devices/:id', request => store.revokeObsidianDevice(request.params.id));
   app.post<{ Body: SyncRequest }>('/api/obsidian/sync', {
-    bodyLimit: 800_000, config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    bodyLimit: MAX_SYNC_REQUEST_BYTES, config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
   }, request => store.syncKnowledge(request.body));
 }

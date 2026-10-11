@@ -45,6 +45,42 @@ acessível e mova/copie o cofre com backup; não apague o original antes de conf
 Instalar o plugin ainda depende da versão do aplicativo e das permissões do seu
 celular. Não foi feita instalação remota no seu aparelho.
 
+## Atualizar para o plugin 0.1.1
+
+Esta versão amplia a biblioteca para 1.000 notas e 10 MB (10.000.000 bytes)
+de texto UTF-8 por conta. O limite por nota continua em 50 KB e o envio continua
+em lotes de até 20 notas/250 KB. Um cofre grande precisa de vários ciclos;
+não é enviado em uma única requisição.
+
+Baixe novamente o ZIP pelo JARVIS. Feche o Obsidian e substitua somente
+`main.js`, `manifest.json` e `styles.css` dentro de
+`.obsidian/plugins/jarvis-obsidian`. Preserve `data.json`, que contém as
+configurações, a chave e os hashes anteriores, e preserve `.jarvis-backups` e
+todas as suas notas. Reabra o Obsidian, confira a versão 0.1.1 e sincronize.
+Não é necessário gerar outra chave. Se um conflito de limite antigo ainda
+aparecer, use **Tentar novamente** depois de atualizar o servidor e o plugin.
+
+O servidor mantém o documento privado existente, os IDs e as revisões das
+notas; não há exclusão, reimportação obrigatória ou migração SQL. A lista de
+hashes conhecidos suporta 1.000 caminhos. A requisição de sincronização aceita
+até 2 MB de JSON para acomodar esses caminhos e os escapes do lote de texto,
+mantendo o limite real de conteúdo enviado em 250 KB. Importações manuais
+continuam com requisições de até 800 KB de JSON e edições com até 350 KB.
+
+A leitura e a escrita do adaptador Supabase permitem até 32 MB de JSON,
+incluindo escapes, metadados, histórico, memórias e projetos. Esse teto de
+transporte não amplia o limite de 10 MB de texto da biblioteca. Escritas retornam
+somente a versão, preservando a comparação de versões entre aparelhos. SQLite
+e a coluna JSONB do SQL existente não impõem o antigo teto de 100 notas/1 MB.
+Os limites de notas rápidas e de histórico são separados e continuam iguais.
+
+Os testes cobrem envio de 1.000 notas/10 MB, preservação de 100 cópias antigas,
+reinício com todos os hashes, leitura/escrita de texto escapado no adaptador
+Supabase, limite das requisições, backups e conflitos após a nota 100. Um teste
+de navegador importa 121 notas em lotes e abre a última nota no painel.
+O teste Supabase usa transporte simulado; a instalação no Android e a
+sincronização da conta real precisam de verificação manual.
+
 ## Conflitos e backups
 
 O plugin registra um hash SHA-256 do último texto confirmado. Envia uma edição
@@ -201,7 +237,7 @@ do arquivo usa texto Markdown, sem executar HTML, scripts ou plugins.
 
 ## Dados e limites
 
-- Até cem notas e 1 MB de texto UTF-8 por conta.
+- Até 1.000 notas e 10 MB de texto UTF-8 por conta.
 - Até vinte arquivos e 250 KB por importação; até 50 KB por nota.
 - Somente `.md` UTF-8 não vazio. Caminhos ocultos, absolutos, repetidos ou com
   `..`, barras invertidas, dois-pontos e caracteres de controle são recusados.

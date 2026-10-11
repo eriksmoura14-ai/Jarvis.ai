@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ObsidianDevice } from '../../shared/obsidian';
+import { KNOWLEDGE_CAPACITY_LABEL } from '../../shared/knowledge';
 import { personalRequest } from '../lib/personal';
 export function ObsidianConnection() {
   const [devices, setDevices] = useState<ObsidianDevice[]>([]); const [name, setName] = useState('Meu Android');
@@ -26,7 +27,7 @@ export function ObsidianConnection() {
     {token && <div role="group" aria-label="Chave de vinculação"><p>Copie agora: esta chave só aparece nesta tela. Autoriza leitura e atualização da biblioteca de notas; expira em 180 dias. Não envie no chat nem compartilhe.</p><label htmlFor="obsidian-pair-token">Chave para o plugin</label><input data-gamepad id="obsidian-pair-token" readOnly value={token} autoComplete="off" spellCheck={false} onFocus={event => event.target.select()} /><button data-gamepad className="secondary-button" onClick={() => setToken('')}>Ocultar chave</button></div>}
     <p>Chaves autorizadas ({devices.length}/5). Esta lista não indica se o Obsidian está aberto ou conectado.</p>
     <ul>{devices.map(device => <li key={device.id}>{device.name} · válida até {new Date(device.expires).toLocaleDateString('pt-BR')} <button data-gamepad className="secondary-button" disabled={busy} onClick={() => setRevoking(device.id)}>Revogar {device.name}</button>{revoking === device.id && <div><p>Revogar interrompe o acesso deste plugin; notas nos dois lados são preservadas.</p><button data-gamepad className="secondary-button" disabled={busy} onClick={() => setRevoking(undefined)}>Cancelar</button><button data-gamepad className="primary-button" disabled={busy} onClick={() => void revoke(device.id)}>Confirmar revogação</button></div>}</li>)}</ul>
-    <p className="privacy-note">Até 100 notas/1 MB, sem anexos. Mudanças nos dois lados geram conflitos para revisão no plugin. Exclusões e renomeações não são propagadas automaticamente. Backups locais ficam em .jarvis-backups antes de sobrescrever um arquivo.</p>
+    <p className="privacy-note">Até {KNOWLEDGE_CAPACITY_LABEL}, sem anexos. Envio em lotes de 20 notas/250 KB. Mudanças nos dois lados geram conflitos para revisão no plugin. Exclusões e renomeações não são propagadas automaticamente. Backups locais ficam em .jarvis-backups antes de sobrescrever um arquivo.</p>
     {error && <p role="alert" className="personal-error">{error}</p>}
   </details>;
 }

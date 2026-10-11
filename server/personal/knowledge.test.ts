@@ -7,7 +7,9 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { validatedPlan } from '../interpretation.js';
 import { markdownTitle, retrieveKnowledge, knowledgeFollowupSubject } from './knowledge-index.js';
-import { validKnowledgeSources, type KnowledgeNote } from '../../shared/knowledge.js';
+import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, validKnowledgeSources, type KnowledgeNote } from '../../shared/knowledge.js';
+import { PersonalStore, SQLiteDocument } from './store.js';
+import { NoteStore } from '../database.js';
 const apps: FastifyInstance[] = []; const dirs: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(apps.splice(0).map(app => app.close())); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 const password = 'fixture-knowledge-password-123';
@@ -66,14 +68,19 @@ describe('biblioteca Markdown pessoal', () => {
     expect((await second.read(id)).statusCode).toBe(404);
   });
   it.each(['count', 'bytes'])('mantém a biblioteca intacta ao exceder o limite de %s', async limit => {
-    const { importFiles, data } = await setup();
-    for (let batch = 0; batch < 5; batch++) {
-      const files = Array.from({ length: limit === 'count' ? 20 : 4 }, (_, index) => ({ path: `${batch}-${index}.md`, content: limit === 'count' ? '# Nota' : 'a'.repeat(50_000) }));
-      expect((await importFiles(files)).statusCode).toBe(200);
-    }
-    const before = await data();
-    expect((await importFiles([{ path: 'Extra.md', content: '# Extra' }])).statusCode).toBe(409);
-    expect((await data()).library).toEqual(before.library); expect((await data()).libraryRevision).toBe(before.libraryRevision);
+    const db = new NoteStore(':memory:'); const backend = new SQLiteDocument(db); const store = new PersonalStore(backend);
+    try {
+      const batches = limit === 'count' ? MAX_KNOWLEDGE_NOTES / 20 : MAX_LIBRARY_BYTES / 250_000;
+      for (let batch = 0; batch < batches; batch++) {
+        const files = Array.from({ length: limit === 'count' ? 20 : 5 }, (_, index) => ({ path: `${batch}-${index}.md`, content: limit === 'count' ? '# Nota' : 'a'.repeat(50_000) }));
+        await store.importKnowledge(files, batch, false);
+      }
+      const { importFiles, data, app } = await setup({ personalBackend: backend });
+      const before = await data();
+      expect((await importFiles([{ path: 'Extra.md', content: '# Extra' }])).statusCode).toBe(409);
+      expect((await data()).library).toEqual(before.library); expect((await data()).libraryRevision).toBe(before.libraryRevision);
+      await app.close(); apps.splice(apps.indexOf(app), 1);
+    } finally { db.close(); }
   });
   it('consulta real sem IA fornece fontes locais e preserva referências no histórico', async () => {
     const { importFiles, chat, data, remove } = await setup(); await importFiles();
