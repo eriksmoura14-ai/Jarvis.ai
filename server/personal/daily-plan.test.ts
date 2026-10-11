@@ -31,13 +31,51 @@ describe('planejamento fundamentado nas notas e tarefas', () => {
   it('usa checklists pendentes antes de metas e identifica sugestões sem inventar datas ou conquistas', () => {
     const notes = [note('Metas e cronograma', goalContent), note('Tarefas', '# Tarefas\n- [x] Concluído\n- [ ] Revisar candidatura\n```md\n- [ ] Exemplo fictício\n```')];
     const plan = dailyPlan(request, snapshot, notes, now)!;
-    expect(plan.reply.message).toContain('começaria por “Revisar candidatura”');
-    expect(plan.reply.message).toContain('sugestão baseada na meta registrada');
+    expect(plan.reply.message).toContain('começaria por revisar candidatura [N1]');
+    expect(plan.reply.message).toContain('sugestão baseada nas suas notas');
     expect(plan.reply.message).not.toContain('Medalha futura'); expect(plan.reply.message).not.toContain('Curso antigo'); expect(plan.reply.message).not.toContain('Exemplo fictício');
     expect(plan.reply.projectChange).toMatchObject({ action: 'create_project', title: 'Plano diário', tasks: [{ title: 'Revisar candidatura' }, { title: 'Definir o próximo passo para: Estudar no exterior' }, { title: 'Definir o próximo passo para: Inglês C1' }] });
     expect(plan.sources).toHaveLength(3); expect(validKnowledgeSources(plan.sources)).toBe(true);
     expect(JSON.stringify(plan.reply.projectChange)).not.toContain('dueDate');
     expect(plan.sources[1].excerpt).toContain('Plano sem resultado confirmado'); expect(snapshot.projects).toEqual([]);
+  });
+  it('prioriza ações e metas acima de atualizar o contexto, sem inventar urgência para obrigações', () => {
+    const notes = [note('00 Pendências', '# Pendências\n- [ ] Preencher Perguntas para atualizar meu contexto.\n- [ ] Atualizar a etapa real de Faculdade no exterior e Educacao e documentos.\n- [ ] Conferir a convocação atual em Alistamento militar.'), note('Metas e cronograma', goalContent)];
+    const before = structuredClone(notes);
+    const plan = dailyPlan(request, snapshot, notes, now)!;
+    expect(plan.reply.projectChange).toMatchObject({ tasks: [{ title: 'Conferir a convocação atual em Alistamento militar.' }, { title: 'Definir o próximo passo para: Estudar no exterior' }, { title: 'Definir o próximo passo para: Inglês C1' }] });
+    expect(plan.reply.message).toContain('começaria por conferir a convocação atual em Alistamento militar [N1].');
+    expect(plan.reply.message).toContain('definir um próximo passo para Estudar no exterior [N2]');
+    expect(plan.reply.message).not.toMatch(/etapa real|meu contexto|urgente|prazo registrado/);
+    expect(notes).toEqual(before); expect(JSON.stringify(plan.reply.projectChange)).not.toContain('dueDate');
+    expect(validKnowledgeSources(plan.sources)).toBe(true);
+  });
+  it('mantém pendências de contexto já salvas, mas prioriza ações reais; um prazo explícito é respeitado', () => {
+    const housekeeping = project('Plano diário', [{ title: 'Preencher Perguntas para atualizar meu contexto.' }, { title: 'Atualizar a etapa real de Faculdade no exterior.' }]);
+    const projects = [housekeeping]; const before = structuredClone(projects);
+    const notes = [note('Tarefas', '# Tarefas\n- [ ] Atualizar o site do cliente\n- [ ] Praticar perguntas de inglês'), note('Metas e cronograma', goalContent)];
+    const plan = dailyPlan(request, { ...snapshot, projects }, notes, now)!;
+    expect(plan.reply.message).toContain('começaria por atualizar o site do cliente [N1]');
+    expect(plan.reply.message).not.toContain('meu contexto');
+    expect(plan.reply.projectChange).toMatchObject({ action: 'add_tasks', projectId: housekeeping.id, tasks: [{ title: 'Atualizar o site do cliente' }, { title: 'Praticar perguntas de inglês' }, { title: 'Definir o próximo passo para: Estudar no exterior' }] });
+    expect(projects).toEqual(before);
+    const due = project('Contexto', [{ title: 'Atualizar meu contexto', dueDate: '2026-10-11' }]);
+    const withDeadline = dailyPlan(request, { ...snapshot, projects: [due] }, notes, now)!;
+    expect(withDeadline.reply.message).toContain('começaria por “Atualizar meu contexto”, do projeto “Contexto” (hoje)');
+    expect(withDeadline.reply.message).toContain('prazo registrado');
+    expect(withDeadline.sources).toHaveLength(2);
+  });
+  it('não descarta a manutenção quando é o único passo disponível nem deixa muitos checklists bloquearem metas', () => {
+    const content = '# Pendências\n- [ ] Preencher Perguntas para atualizar meu contexto.';
+    const fallback = dailyPlan(request, snapshot, [note('Contexto', content)], now)!;
+    expect(fallback.reply.projectChange).toMatchObject({ tasks: [{ title: 'Preencher Perguntas para atualizar meu contexto.' }] });
+    expect(fallback.reply.message).not.toContain('prazo registrado');
+    const many = Array.from({ length: 100 }, (_, i) => `- [ ] Atualizar a etapa real do contexto ${i}`).join('\n');
+    const plan = dailyPlan(request, snapshot, [note('00 Pendências', '# Pendências\n' + many), note('Metas e cronograma', goalContent)], now)!;
+    expect(plan.sources[0].title).toBe('Metas e cronograma');
+    expect(plan.sources[1].title).toBe('Metas e cronograma');
+    expect(plan.sources[2].title).toBe('00 Pendências');
+    expect(plan.reply.projectChange).toMatchObject({ tasks: [{ title: 'Definir o próximo passo para: Estudar no exterior' }, { title: 'Definir o próximo passo para: Inglês C1' }, { title: 'Atualizar a etapa real do contexto 0' }] });
   });
   it('não usa metas públicas, prosa vaga, tarefas concluídas ou reabre um plano arquivado', () => {
     const publicNote = note('Metas do país', '# Metas do país\n| Meta | Situação |\n|---|---|\n| Crescer PIB | Meta |');

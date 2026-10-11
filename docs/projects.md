@@ -61,7 +61,7 @@ reutilizar um estado anterior das tarefas ao responder.
 
 ## Planejar o dia
 
-Diga “planeje meu dia”, “o que devo fazer hoje?” ou toque em **Planejar meu dia**. Não exige cota de IA: ordena até três tarefas pendentes pelos prazos reais no fuso do aparelho. Se houver espaço, usa checklists pendentes e tabelas de metas pessoais do Obsidian para sugerir próximos passos, com referências. Metas viram sugestões para definir um próximo passo, sem afirmar realização ou criar prazos. Não infere urgência só porque uma meta aparece primeiro numa nota.
+Diga “planeje meu dia”, “o que devo fazer hoje?” ou toque em **Planejar meu dia**. Não exige cota de IA: sugere até três passos, priorizando tarefas com prazos reais no fuso do aparelho. Depois vêm tarefas salvas, checklists de ações e tabelas de metas pessoais do Obsidian, com referências. Pendências como preencher perguntas de contexto ou atualizar a etapa real de um projeto ficam depois das ações e metas se não tiverem prazo explícito; continuam guardadas e podem aparecer quando faltam outros passos. Metas viram sugestões para definir um próximo passo, sem afirmar realização ou criar prazos. A seleção usa regras e não infere urgência só porque uma meta aparece primeiro numa nota.
 
 Passos ainda não registrados aparecem numa proposta para o projeto **Plano diário**. Só a confirmação os salva. O projeto é reutilizado; tarefas já registradas, concluídas ou arquivadas não são duplicadas. Limites de projetos/tarefas continuam valendo. Alterar a fonte invalida a proposta antiga. Não modifica os arquivos do Obsidian. Conclua as tarefas no painel quando realmente terminar; o JARVIS não presume conclusão.
 
