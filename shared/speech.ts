@@ -1,4 +1,7 @@
 export const MAX_SPEECH_CHARACTERS = 1200;
+export type SpeechProfile = 'natural' | 'british';
+export interface SpeechOptions { voiceId?: string; profile?: SpeechProfile }
+export const VOICE_ID_PATTERN = /^[a-zA-Z0-9]{1,100}$/;
 
 // Read prose instead of markdown syntax, links and research reference numbers.
 export function speechText(text: string) {

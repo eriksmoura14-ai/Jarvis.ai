@@ -44,13 +44,41 @@ navegador inicia a reprodução do áudio retornado pela integração.
 Para desativar no servidor, use `TTS_PROVIDER=browser`. Para usar somente a voz
 do aparelho sem alterar o servidor, selecione **Voz do aparelho** em Preferências.
 Essa escolha e a voz nativa escolhida são guardadas por navegador/dispositivo.
-O Voice ID do servidor vale para todos os aparelhos; atualize a página depois
-de trocar esse ID para descartar o áudio anterior.
+O Voice ID do servidor vale para todos os aparelhos. Em **Preferências → Voice
+ID do ElevenLabs**, você pode salvar outro identificador para este navegador,
+sem alterar a chave. Vazio volta à voz do servidor. Trocar a escolha descarta os
+áudios anteriores. Alterar voz/estilo ou iniciar um teste interrompe a conversa
+atual, cancela a preparação das partes e ignora respostas atrasadas, para não
+reproduzir a voz antiga. Para usar o mesmo ID como padrão no celular e Xbox, configure
+`ELEVENLABS_VOICE_ID` no Render e deixe esse campo vazio nos dois aparelhos;
+atualize as páginas depois de trocar a variável.
+
+## Responder em áudio e estilo britânico
+
+A leitura automática do chat vem ligada nesta atualização. A antiga preferência
+v1 gravava `false` mesmo sem uma escolha explícita; v2 inicia a leitura uma vez
+e preserva as próximas escolhas, inclusive desligar. Desative em **Preferências
+→ Ler respostas automaticamente no chat**. No modo voz, o botão de som controla
+a leitura. Somente a resposta final é falada; rascunhos e erros da IA não são.
+
+**Estilo de fala → Britânico · calmo e preciso** vem selecionado. Usa maior
+estabilidade e menos expressividade no ElevenLabs e uma frase de teste em
+inglês com “sir”. Na síntese nativa, prefere `en-GB` quando disponível e usa ritmo
+0,94. Uma voz nativa escolhida manualmente tem prioridade. No ElevenLabs, é
+necessário escolher uma voz masculina britânica disponível pela API Free na
+[biblioteca](https://elevenlabs.io/app/voice-library), salvar seu Voice ID e testar.
+O perfil não altera o timbre/gênero de uma voz existente, não garante a voz do
+ator do filme e não traduz as respostas. Para respostas em inglês, converse em
+inglês ou peça explicitamente esse idioma. “Natural · português” restaura o
+teste em português e os ajustes anteriores. Perfil e Voice ID escolhido no
+aplicativo são preferências deste navegador.
 
 ## Como funciona e limites
 
-- A rota autenticada `POST /api/speech` aceita apenas texto, até 1.200 caracteres.
-  Não recebe chaves, URL, modelo ou identificador de voz do frontend.
+- A rota autenticada `POST /api/speech` aceita texto até 1.200 caracteres e,
+  opcionalmente, `voiceId` alfanumérico (1–100 caracteres) e `profile`
+  (`natural` ou `british`). Não recebe chaves, URL ou modelo do frontend.
+  O host, o modelo e os ajustes permitidos permanecem definidos no backend.
 - O backend consulta `GET /v1/user/subscription` antes de cada geração. Só aceita
   `tier=free`, contagens válidas e cota suficiente. Contas pagas, planos
   desconhecidos e falhas nessa verificação não geram áudio. A cota é a que a
@@ -82,6 +110,10 @@ de trocar esse ID para descartar o áudio anterior.
   em **Ouvir resposta**, **Testar voz** ou **Testar ElevenLabs** para reproduzir o áudio já preparado.
   O teste usa uma frase real e também consome a cota quando gera áudio novo.
   A conversa contínua aguarda o áudio terminar antes de pedir outra escuta.
+  Um bloqueio de autoplay tem mensagem própria, distinta de falha de geração
+  ou reprodução. Se a tela indicar reprodução mas você não ouvir, confira
+  volume, aba silenciada e saída de áudio/fones. Não há como verificar daqui
+  o volume físico do seu dispositivo.
 - Não existe reprodução com tela bloqueada nem escuta permanente. Xbox Edge,
   microfone físico, fones, reprodução automática e retomada precisam de teste
   no aparelho. A build Pages continua usando voz nativa, pois não acessa a

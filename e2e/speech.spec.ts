@@ -34,7 +34,7 @@ test('voz por IA usa a API protegida e reprodução MP3, sem síntese nativa', a
   let calls = 0;
   await page.route('**/api/speech', async route => {
     calls++; expect(route.request().headers()['x-jarvis-client']).toBe('1');
-    expect(route.request().postDataJSON()).toEqual({ text: 'O resultado é 7.' });
+    expect(route.request().postDataJSON()).toEqual({ text: 'O resultado é 7.', profile: 'british' });
     await route.fulfill({ contentType: 'audio/mpeg', body: mp3 });
   });
   await cloud(page); await response(page);
@@ -80,7 +80,7 @@ test('bloqueio de reprodução permite toque para ouvir o mesmo áudio sem consu
   await page.route('**/api/speech', route => { calls++; return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
   await cloud(page);
   await page.evaluate(() => { (window as unknown as { speechTest: { blocked: boolean } }).speechTest.blocked = true; });
-  await response(page); await expect(page.getByRole('alert')).toContainText('Ouvir resposta');
+  await response(page); await expect(page.getByRole('alert')).toContainText('O navegador bloqueou o áudio automático');
   await page.evaluate(() => { (window as unknown as { speechTest: { blocked: boolean } }).speechTest.blocked = false; });
   await page.getByRole('button', { name: 'Ouvir resposta', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Falando'); expect(calls).toBe(1);
@@ -156,4 +156,90 @@ test('modo ElevenLabs preservado informa quando servidor não tem voz configurad
   await response(page);
   await expect(page.getByRole('alert')).toContainText('não está configurado');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+});
+
+test('mensagem digitada no chat é lida automaticamente e a opção de desligar persiste', async ({ page }) => {
+  let calls = 0;
+  await page.addInitScript(() => {
+    localStorage.setItem('jarvis.view.v1', 'chat');
+    localStorage.setItem('jarvis.voice.v1', 'false'); // Old implicit default must not keep the chat silent.
+  });
+  await page.route('**/api/speech', route => { calls++; return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
+  await cloud(page);
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('calcular 2 + 5');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect(page.getByText('O resultado é 7.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Voz reproduzida: ElevenLabs.', { exact: true })).toBeVisible();
+  expect(calls).toBe(1);
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('checkbox', { name: /Ler respostas automaticamente no chat/ }).uncheck();
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: /Ler respostas automaticamente no chat/ })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('calcular 3 + 5');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect(page.getByText('O resultado é 8.', { exact: true })).toBeVisible();
+  expect(calls).toBe(1);
+});
+
+test('desligar leitura enquanto a IA responde evita geração de áudio sem perder a resposta', async ({ page }) => {
+  let release = () => {}; const pending = new Promise<void>(resolve => { release = resolve; }); let calls = 0;
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
+  await page.route('**/api/chat', async route => { await pending; await route.fulfill({ json: { id: 'delayed-reply', message: 'Resposta preservada.', provider: 'groq', command: 'conversation', createdAt: new Date().toISOString() } }); });
+  await page.route('**/api/speech', route => { calls++; return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
+  await cloud(page);
+  const requested = page.waitForRequest('**/api/chat');
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('Quais são meus planos?');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click(); await requested;
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('checkbox', { name: /Ler respostas automaticamente no chat/ }).uncheck();
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); release();
+  await expect(page.getByText('Resposta preservada.', { exact: true })).toBeVisible();
+  expect(calls).toBe(0);
+  expect(await page.evaluate(() => (window as unknown as { speechTest: { plays: number } }).speechTest.plays)).toBe(0);
+});
+
+test('trocar Voice ID descarta o áudio anterior, valida entrada e preserva a escolha', async ({ page }) => {
+  const requests: Array<{ voiceId?: string; profile: string; text: string }> = [];
+  await page.route('**/api/speech', route => { requests.push(route.request().postDataJSON()); return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
+  await cloud(page); await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Estilo de fala' })).toHaveValue('british');
+  await page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' }).fill('BritishFixtureA');
+  await page.getByRole('button', { name: 'Salvar voz', exact: true }).click();
+  await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Voz reproduzida: ElevenLabs.');
+  expect(requests).toHaveLength(1); expect(requests[0]).toMatchObject({ voiceId: 'BritishFixtureA', profile: 'british', text: 'Good morning, sir. All systems are ready. How may I assist you today?' });
+  await endAudio(page);
+  await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Voz reproduzida: ElevenLabs.'); expect(requests).toHaveLength(1);
+  await page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' }).fill('BritishFixtureB');
+  await page.getByRole('button', { name: 'Salvar voz', exact: true }).click();
+  await page.getByRole('button', { name: 'Testar ElevenLabs', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Voz reproduzida: ElevenLabs.');
+  expect(requests).toHaveLength(2); expect(requests[1].voiceId).toBe('BritishFixtureB');
+  await page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' }).fill('https://other.test/key');
+  await page.getByRole('button', { name: 'Salvar voz', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('somente o Voice ID');
+  await page.getByRole('button', { name: 'Fechar janela' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Voice ID do ElevenLabs' })).toHaveValue('BritishFixtureB');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('perfil britânico seleciona voz nativa en-GB disponível com ritmo mais calmo', async ({ page }) => {
+  await cloud(page);
+  await page.evaluate(() => {
+    window.speechSynthesis.getVoices = () => [
+      { voiceURI: 'test-pt', name: 'Português de teste', lang: 'pt-BR' },
+      { voiceURI: 'test-gb', name: 'British fixture', lang: 'en-GB' },
+    ] as SpeechSynthesisVoice[];
+  });
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Tipo de voz', exact: true }).selectOption('browser');
+  await page.getByRole('button', { name: 'Testar voz', exact: true }).click();
+  expect(await page.evaluate(() => {
+    const utterance = (window as unknown as { voiceTest: { utterance: SpeechSynthesisUtterance } }).voiceTest.utterance;
+    return { lang: utterance.lang, rate: utterance.rate, voice: utterance.voice?.voiceURI };
+  })).toEqual({ lang: 'en-GB', rate: 0.94, voice: 'test-gb' });
 });

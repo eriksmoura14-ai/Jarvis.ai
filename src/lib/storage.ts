@@ -46,7 +46,9 @@ export function loadHistory(): Message[] {
   try { return decodeHistory(localStorage.getItem(HISTORY_KEY)); } catch { return []; }
 }
 export function loadVoicePreference(): boolean {
-  try { return localStorage.getItem('jarvis.voice.v1') === 'true'; } catch { return false; }
+  // v1 wrote false even when the owner had never chosen a preference.
+  // Start automatic reading once in v2; subsequent explicit opt-outs persist.
+  try { return localStorage.getItem('jarvis.voice.v2') !== 'false'; } catch { return true; }
 }
 export function loadView(): 'voice' | 'chat' {
   try { return localStorage.getItem('jarvis.view.v1') === 'chat' ? 'chat' : 'voice'; } catch { return 'voice'; }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestSpeech, SpeechRequestError } from '../lib/speech';
-import { speechText } from '../../shared/speech';
+import { speechText, VOICE_ID_PATTERN, type SpeechProfile } from '../../shared/speech';
 
 interface RecognitionEvent {
   resultIndex: number;
@@ -189,7 +189,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
 }
 
 export type SpeechOutcome = 'ended' | 'canceled' | 'error' | 'unavailable';
-function useNativeSpeechOutput() {
+function useNativeSpeechOutput(profile: SpeechProfile) {
   const supported = typeof window.speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
   const [speaking, setSpeaking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -220,13 +220,14 @@ function useNativeSpeechOutput() {
     return new Promise(resolve => {
       const utterance = new SpeechSynthesisUtterance(speechText(text));
       currentUtterance.current = utterance;
-      utterance.lang = 'pt-BR';
+      utterance.lang = profile === 'british' ? 'en-GB' : 'pt-BR';
       const available = window.speechSynthesis.getVoices();
       const chosen = available.find(voice => voice.voiceURI === voiceUri)
+        ?? (profile === 'british' ? available.find(voice => voice.lang.toLowerCase() === 'en-gb') : undefined)
         ?? available.find(voice => voice.lang.toLowerCase() === 'pt-br')
         ?? available.find(voice => voice.lang.toLowerCase().startsWith('pt'));
       if (chosen) { utterance.voice = chosen; utterance.lang = chosen.lang; }
-      utterance.rate = 1;
+      utterance.rate = profile === 'british' ? 0.94 : 1;
       let timeout: ReturnType<typeof setTimeout>;
       const complete = (outcome: SpeechOutcome) => {
         clearTimeout(timeout);
@@ -261,7 +262,7 @@ function useNativeSpeechOutput() {
       };
       try { window.speechSynthesis.speak(utterance); } catch { fail(); }
     });
-  }, [supported, stop, voiceUri]);
+  }, [supported, stop, voiceUri, profile]);
   useEffect(() => {
     if (!supported) return;
     const load = () => setVoices(window.speechSynthesis.getVoices());
@@ -278,7 +279,13 @@ function useNativeSpeechOutput() {
 
 type SpeechEngine = 'auto' | 'browser' | 'elevenlabs';
 export function useSpeechOutput(cloudAvailable = false) {
-  const native = useNativeSpeechOutput();
+  const [profile, setProfile] = useState<SpeechProfile>(() => {
+    try { return localStorage.getItem('jarvis.speech-profile.v1') === 'natural' ? 'natural' : 'british'; } catch { return 'british'; }
+  });
+  const [cloudVoiceId, setCloudVoiceId] = useState(() => {
+    try { const id = localStorage.getItem('jarvis.cloud-voice.v1') ?? ''; return VOICE_ID_PATTERN.test(id) ? id : ''; } catch { return ''; }
+  });
+  const native = useNativeSpeechOutput(profile);
   const [engine, setEngine] = useState<SpeechEngine>(() => {
     try { const saved = localStorage.getItem('jarvis.speech-engine.v1'); return saved === 'browser' || saved === 'elevenlabs' ? saved : 'auto'; } catch { return 'auto'; }
   });
@@ -289,11 +296,13 @@ export function useSpeechOutput(cloudAvailable = false) {
   const [timings, setTimings] = useState<{ prepareMs?: number; firstAudioMs: number; engine: string }>();
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
+  const preparationRequests = useRef(new Set<AbortController>());
   const audio = useRef<HTMLAudioElement | null>(null);
   const objectUrl = useRef('');
   const finish = useRef<((outcome: SpeechOutcome) => void) | null>(null);
   // Retain up to two clips in memory for explicit replay, including segmented speech.
   const cached = useRef(new Map<string, Blob>());
+  const clipKey = useCallback((text: string) => JSON.stringify([cloudVoiceId, profile, text]), [cloudVoiceId, profile]);
   const cache = useCallback((text: string, blob: Blob) => {
     cached.current.delete(text); cached.current.set(text, blob);
     while (cached.current.size > 2) cached.current.delete(cached.current.keys().next().value!);
@@ -301,25 +310,28 @@ export function useSpeechOutput(cloudAvailable = false) {
   const prepare = useCallback(async (text: string, signal: AbortSignal) => {
     if (!cloudAvailable || engine === 'browser') return;
     const prose = speechText(text);
-    if (!prose || cached.current.has(prose)) return;
+    const key = clipKey(prose);
+    if (!prose || cached.current.has(key)) return;
     const controller = new AbortController();
+    preparationRequests.current.add(controller);
     const cancel = () => controller.abort();
     signal.addEventListener('abort', cancel, { once: true });
     if (signal.aborted) cancel();
     const timer = setTimeout(cancel, 25_000);
     try {
-      const blob = await requestSpeech(prose, controller.signal);
-      if (!signal.aborted) cache(prose, blob);
+      const blob = await requestSpeech(prose, controller.signal, { profile, ...(cloudVoiceId ? { voiceId: cloudVoiceId } : {}) });
+      if (!controller.signal.aborted) cache(key, blob);
     } catch (cause) {
       if (controller.signal.aborted && !signal.aborted) throw new SpeechRequestError('O serviço de voz demorou para preparar a segunda parte.');
       throw cause;
-    } finally { clearTimeout(timer); signal.removeEventListener('abort', cancel); }
-  }, [cloudAvailable, engine, cache]);
+    } finally { clearTimeout(timer); signal.removeEventListener('abort', cancel); preparationRequests.current.delete(controller); }
+  }, [cloudAvailable, engine, cache, clipKey, profile, cloudVoiceId]);
   const stop = useCallback(() => {
     generation.current++;
     finish.current?.('canceled');
     finish.current = null;
     request.current?.abort(); request.current = null;
+    preparationRequests.current.forEach(controller => controller.abort()); preparationRequests.current.clear();
     if (audio.current) {
       audio.current.onplaying = null; audio.current.onended = null; audio.current.onerror = null;
       audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null;
@@ -339,6 +351,7 @@ export function useSpeechOutput(cloudAvailable = false) {
     }
     if (!cloudAvailable || selectedEngine === 'browser') return native.speak(text, nativePlaying);
     const prose = speechText(text);
+    const key = clipKey(prose);
     if (!prose) return selectedEngine === 'elevenlabs' ? 'unavailable' : native.speak(text, nativePlaying);
     const token = ++generation.current;
     const controller = new AbortController(); request.current = controller;
@@ -357,15 +370,17 @@ export function useSpeechOutput(cloudAvailable = false) {
         resolve(value);
       };
       finish.current = complete;
-      const playbackFailed = () => {
+      const playbackFailed = (cause?: unknown) => {
         if (token !== generation.current) return;
-        setError('A voz não foi reproduzida. Toque em “Ouvir resposta” ou “Testar voz” para tentar novamente.');
+        setError(cause instanceof DOMException && cause.name === 'NotAllowedError'
+          ? 'O navegador bloqueou o áudio automático. Toque em “Ouvir resposta” ou “Testar voz” para reproduzir o áudio já preparado, sem gerar novamente.'
+          : 'Não foi possível reproduzir o áudio. Toque em “Ouvir resposta” ou “Testar voz” para tentar novamente. Confira também o volume e se a aba está silenciada.');
         complete('error');
       };
       const run = async () => {
         let blob: Blob;
         try {
-          blob = cached.current.get(prose) ?? await requestSpeech(prose, controller.signal);
+          blob = cached.current.get(key) ?? await requestSpeech(prose, controller.signal, { profile, ...(cloudVoiceId ? { voiceId: cloudVoiceId } : {}) });
         } catch (cause) {
           if (token !== generation.current) return;
           if (cause instanceof SpeechRequestError && cause.status === 401) { complete('canceled'); return; }
@@ -376,7 +391,7 @@ export function useSpeechOutput(cloudAvailable = false) {
           complete('error'); return;
         }
         if (token !== generation.current) return;
-        cache(prose, blob);
+        cache(key, blob);
         const prepareMs = Math.round(performance.now() - started);
         clearTimeout(timer);
         objectUrl.current = URL.createObjectURL(blob);
@@ -392,21 +407,33 @@ export function useSpeechOutput(cloudAvailable = false) {
         player.onended = () => { if (token === generation.current) complete('ended'); };
         player.onerror = playbackFailed;
         timer = setTimeout(playbackFailed, 8000);
-        try { await player.play(); } catch { playbackFailed(); }
+        try { await player.play(); } catch (cause) { playbackFailed(cause); }
       };
       timer = setTimeout(() => controller.abort(), 25_000);
       void run().catch(() => playbackFailed());
     });
     if (token !== generation.current) return 'canceled';
     return providerFailed && selectedEngine === 'auto' && native.supported ? native.speak(text, nativePlaying) : outcome;
-  }, [cloudAvailable, engine, native.speak, native.supported, stop, cache]);
+  }, [cloudAvailable, engine, native.speak, native.supported, stop, cache, clipKey, profile, cloudVoiceId]);
   const chooseEngine = (value: SpeechEngine) => {
     stop(); setEngine(value); setError(''); setNotice('');
     try { localStorage.setItem('jarvis.speech-engine.v1', value); } catch { /* Session preference still works. */ }
   };
+  const chooseProfile = (value: SpeechProfile) => {
+    stop(); cached.current.clear(); setProfile(value); setError(''); setNotice('');
+    try { localStorage.setItem('jarvis.speech-profile.v1', value); } catch { /* Session preference still works. */ }
+  };
+  const chooseCloudVoice = (value: string) => {
+    const id = value.trim();
+    if (id && !VOICE_ID_PATTERN.test(id)) { setError('Cole somente o Voice ID, sem endereço ou chave API.'); return false; }
+    stop(); cached.current.clear(); setCloudVoiceId(id); setError(''); setNotice('');
+    try { localStorage.setItem('jarvis.cloud-voice.v1', id); } catch { /* Session preference still works. */ }
+    return true;
+  };
   useEffect(() => () => { stop(); cached.current.clear(); }, [stop]);
   return { ...native, supported: native.supported || cloudAvailable, busy: busy || native.busy,
-    speaking: speaking || native.speaking, error: error || native.error, notice, timings, engine, chooseEngine, cloudAvailable, speak, prepare, stop };
+    speaking: speaking || native.speaking, error: error || native.error, notice, timings, engine, chooseEngine, cloudAvailable,
+    profile, chooseProfile, cloudVoiceId, chooseCloudVoice, speak, prepare, stop };
 }
 
 export function useSpeechInterrupt(enabled: boolean, spokenText: string, onInterrupt: () => void) {

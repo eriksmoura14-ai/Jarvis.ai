@@ -78,6 +78,18 @@ test('interromper texto progressivo cancela o leitor e impede fala tardia', asyn
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
 });
 
+test('trocar estilo cancela resposta pendente para impedir áudio com preferências antigas', async ({ page }) => {
+  await streamFixture(page); await type(page);
+  await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Estilo de fala', exact: true }).selectOption('natural');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { progressTest: { canceled: boolean } }).progressTest.canceled)).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as { progressTest: { signal: AbortSignal } }).progressTest.signal.aborted)).toBe(true);
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
+  await expect(page.locator('.scene-reply')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
+});
+
 async function cloudFixture(page: Page) {
   await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok', provider: 'groq', version: '0.1.0', streaming: true, speech: { configured: true, provider: 'elevenlabs' } } }));
   await page.route('**/api/chat', route => route.fulfill({ json: result() }));

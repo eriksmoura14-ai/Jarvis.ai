@@ -31,6 +31,16 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     expect(request).toMatchObject({ redirect: 'error', method: 'POST', headers: { 'xi-api-key': config.apiKey } });
     expect(JSON.parse(request!.body as string)).toMatchObject({ text: 'Olá, sou o Jarvis.', model_id: 'eleven_multilingual_v2' });
   });
+  it('aplica estilo estável e Voice ID escolhido sem permitir URL ou trocar o modelo', async () => {
+    const fetcher = transport();
+    await new SpeechProvider(config, fetcher).synthesize('Good morning, sir.', undefined, { voiceId: 'BritishFixture', profile: 'british' });
+    expect(fetcher.mock.calls[1][0]).toBe('https://api.elevenlabs.io/v1/text-to-speech/BritishFixture?output_format=mp3_44100_128');
+    expect(JSON.parse(fetcher.mock.calls[1][1]!.body as string)).toEqual({ text: 'Good morning, sir.', model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.7, similarity_boost: 0.75, style: 0, use_speaker_boost: true } });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await expect(new SpeechProvider(config, fetcher).synthesize('Olá.', undefined, { voiceId: 'https://other.test/' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it.each([{ ...free, tier: 'starter' }, { ...free, tier: 'unknown' }, null, { tier: 'free' }, { ...free, character_count: -1 }, { ...free, character_count: 999 }])('não gera áudio com plano/cota inválidos: %j', async account => {
     const fetcher = transport(account);
     await expect(new SpeechProvider(config, fetcher).synthesize('Texto para leitura.')).rejects.toThrow();
@@ -100,7 +110,9 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     const cookie = login.cookies[0]; const authorized = { ...headers, cookie: `${cookie.name}=${cookie.value}` };
     expect((await app.inject({ method: 'POST', url: '/api/speech', headers: { cookie: authorized.cookie }, payload: { text: 'Olá.' } })).statusCode).toBe(403);
     expect((await app.inject({ method: 'POST', url: '/api/speech', headers: { ...authorized, origin: 'https://other.test' }, payload: { text: 'Olá.' } })).statusCode).toBe(403);
-    for (const payload of [{ text: 'x'.repeat(1201) }, { text: ' ' }, { text: 'Olá.', voiceId: 'other' }]) expect((await app.inject({ method: 'POST', url: '/api/speech', headers: authorized, payload })).statusCode).toBe(400);
+    for (const payload of [{ text: 'x'.repeat(1201) }, { text: ' ' }, { text: 'Olá.', voiceId: '../other' },
+      { text: 'Olá.', voiceId: '' }, { text: 'Olá.', profile: 'clone' }, { text: 'Olá.', apiKey: 'fixture' },
+      { text: 'Olá.', model_id: 'other' }]) expect((await app.inject({ method: 'POST', url: '/api/speech', headers: authorized, payload })).statusCode).toBe(400);
     expect(fetcher).not.toHaveBeenCalled();
     const response = await app.inject({ method: 'POST', url: '/api/speech', headers: authorized, payload: { text: 'Olá.' } });
     expect(response.statusCode).toBe(200); expect(response.headers['content-type']).toBe('audio/mpeg'); expect(response.headers['cache-control']).toBe('no-store');
@@ -108,6 +120,17 @@ describe('voz ElevenLabs restrita ao plano gratuito', () => {
     const health = (await app.inject('/api/health')).json();
     expect(health.speech).toEqual({ configured: true, provider: 'elevenlabs' });
     expect(JSON.stringify(health)).not.toContain(config.apiKey); expect(JSON.stringify(health)).not.toContain(config.voiceId);
+  });
+  it('aceita escolha de voz apenas na sessão pessoal e mantém verificação Free', async () => {
+    const fetcher = transport({ ...free, tier: 'starter' });
+    const app = await buildApp({ databasePath: ':memory:', personal: { password: 'fixture-personal-password', secure: false }, speech: config, speechFetch: fetcher }); apps.push(app);
+    const payload = { text: 'Good morning, sir.', profile: 'british', voiceId: 'BritishFixture' };
+    expect((await app.inject({ method: 'POST', url: '/api/speech', headers: { 'x-jarvis-client': '1' }, payload })).statusCode).toBe(401);
+    expect(fetcher).not.toHaveBeenCalled();
+    const login = await app.inject({ method: 'POST', url: '/api/personal/login', headers: { 'x-jarvis-client': '1' }, payload: { password: 'fixture-personal-password' } });
+    const response = await app.inject({ method: 'POST', url: '/api/speech', headers: { 'x-jarvis-client': '1', cookie: login.cookies[0].name + '=' + login.cookies[0].value }, payload });
+    expect(response.statusCode).toBe(503); expect(response.json().error).toContain('plano Free');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('não permite habilitar a rota por IA sem login e explica configuração ausente', async () => {
     await expect(buildApp({ databasePath: ':memory:', speech: config })).rejects.toThrow('senha');

@@ -1,4 +1,4 @@
-import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
+import { MAX_SPEECH_CHARACTERS, VOICE_ID_PATTERN, type SpeechOptions } from '../shared/speech.js';
 
 export interface SpeechConfig { apiKey: string; voiceId: string }
 export class SpeechError extends Error {
@@ -37,8 +37,12 @@ async function bytes(response: Response, limit: number) {
 export class SpeechProvider {
   private active = false;
   constructor(private config: SpeechConfig, private transport: typeof fetch = fetch, private timeoutMs = 20_000) {}
-  async synthesize(text: string, signal?: AbortSignal) {
+  async synthesize(text: string, signal?: AbortSignal, options: SpeechOptions = {}) {
     if (!text.trim() || text.length > MAX_SPEECH_CHARACTERS) throw new SpeechError('Texto inválido para leitura.', 400);
+    if ((options.voiceId !== undefined && !VOICE_ID_PATTERN.test(options.voiceId))
+      || (options.profile !== undefined && options.profile !== 'natural' && options.profile !== 'british')) {
+      throw new SpeechError('Configuração de voz inválida.', 400);
+    }
     if (signal?.aborted) throw new SpeechError('Leitura cancelada.', 499);
     // Serialize quota checks and generation, including across phone/computer requests.
     if (this.active) throw new SpeechError('Há uma voz sendo preparada. Aguarde e tente novamente.', 429);
@@ -61,10 +65,11 @@ export class SpeechProvider {
         || account.character_count! < 0 || account.character_limit! < 0) throw new SpeechError('Não foi possível verificar a cota do serviço de voz.');
       if (account.character_count! + text.length > account.character_limit!) throw new SpeechError('A cota gratuita de voz foi atingida. Use a voz do aparelho.', 429);
       if (controller.signal.aborted) throw new SpeechError('Leitura cancelada.', 499);
-      const response = await this.transport(`https://api.elevenlabs.io/v1/text-to-speech/${this.config.voiceId}?output_format=mp3_44100_128`, {
+      const response = await this.transport(`https://api.elevenlabs.io/v1/text-to-speech/${options.voiceId ?? this.config.voiceId}?output_format=mp3_44100_128`, {
         method: 'POST', redirect: 'error', signal: controller.signal, headers: { ...headers, Accept: 'audio/mpeg' },
         body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: {
-          stability: 0.5, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true,
+          stability: options.profile === 'british' ? 0.7 : 0.5,
+          similarity_boost: 0.75, style: options.profile === 'british' ? 0 : 0.15, use_speaker_boost: true,
         } }),
       });
       await this.ensureOK(response, 'speech');
@@ -92,7 +97,7 @@ export class SpeechProvider {
     if (['paid_plan_required', 'payment_required', 'free_users_not_allowed'].includes(code)) throw new SpeechError('O ElevenLabs exige um plano pago para esta voz ou recurso. Escolha uma voz disponível para uso pela API no plano Free.');
     if (code === 'quota_exceeded') throw new SpeechError('A cota da conta ou da chave ElevenLabs foi atingida. Confira o limite de créditos.', 429);
     if (code === 'invalid_api_key') throw new SpeechError('O ElevenLabs recusou a chave. Confira ELEVENLABS_API_KEY no Render.');
-    if (code === 'voice_not_found') throw new SpeechError('A voz não está disponível nesta conta. Confira ELEVENLABS_VOICE_ID no Render.');
+    if (code === 'voice_not_found') throw new SpeechError('A voz não está disponível nesta conta. Confira o Voice ID nas Preferências ou ELEVENLABS_VOICE_ID no Render.');
     if (code === 'missing_permissions') throw new SpeechError(operation === 'account'
       ? 'A chave ElevenLabs precisa de User → Read para verificar o plano e a cota.'
       : 'A chave ElevenLabs precisa de Text to Speech → Access para gerar áudio.');

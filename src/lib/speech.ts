@@ -1,11 +1,12 @@
 import { lockPersonal } from './personal';
+import type { SpeechOptions } from '../../shared/speech';
 
 export class SpeechRequestError extends Error {
   constructor(message: string, public readonly status = 503) { super(message); }
 }
-export async function requestSpeech(text: string, signal: AbortSignal): Promise<Blob> {
+export async function requestSpeech(text: string, signal: AbortSignal, options: SpeechOptions = {}): Promise<Blob> {
   const response = await fetch('/api/speech', { method: 'POST', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
-    headers: { 'Content-Type': 'application/json', 'X-Jarvis-Client': '1' }, body: JSON.stringify({ text }), signal });
+    headers: { 'Content-Type': 'application/json', 'X-Jarvis-Client': '1' }, body: JSON.stringify({ text, ...options }), signal });
   if (!response.ok) {
     if (response.status === 401) lockPersonal();
     const data = await response.json().catch(() => null) as { error?: string } | null;
