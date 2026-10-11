@@ -49,6 +49,55 @@ describe('conexões de modelo', () => {
     expect(response.message).toContain('A resposta atingiu o limite');
     expect(response.message).not.toContain('Não deve aparecer no chat');
   });
+  it.each([
+    [undefined, 'por minuto ou por dia'],
+    ['86400', '24 horas'],
+    ['120', '2 minutos'],
+    ['3601', '1 hora e 1 minuto'],
+    ['1', '1 segundo'],
+    ['0', '0 segundos'],
+    ['credential-secret', 'por minuto ou por dia'],
+    ['999999999999', 'por minuto ou por dia'],
+    ['-1', 'por minuto ou por dia'],
+  ])('informa somente o prazo válido recebido do provedor: %s', async (retryAfter, expected) => {
+    const transport = vi.fn<typeof fetch>(async () => Response.json({ error: { code: 'rate_limit_exceeded', message: 'credential-secret' } }, {
+      status: 429, headers: retryAfter ? { 'Retry-After': retryAfter } : {},
+    }));
+    const provider = new ModelProvider({ provider: 'groq', model: 'model', apiKey: 'test-secret' }, transport);
+    await expect(provider.respond(request)).rejects.toMatchObject({ statusCode: 429, retryWithoutStream: false, message: expect.stringContaining(expected) });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it('entende Retry-After como data HTTP sem prometer um reset de um minuto', async () => {
+    const timestamp = Date.now(); const date = new Date(timestamp + 3600_000).toUTCString();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(timestamp);
+    try {
+      const provider = new ModelProvider({ provider: 'groq', model: 'model', apiKey: 'test-secret' }, async () => new Response('', { status: 429, headers: { 'Retry-After': date } }));
+      await expect(provider.respond(request)).rejects.toMatchObject({ message: expect.stringContaining('1 hora'), retryWithoutStream: false });
+    } finally { now.mockRestore(); }
+  });
+  it('envia catálogo para selecionar notas, mas somente evidências na resposta final', async () => {
+    const catalog = Array.from({ length: 51 }, (_, i) => ({ id: randomUUID(), title: `Direção ${i}`, path: `Planos/Direcao-${i}.md` }));
+    const source = { reference: 'N1', ...catalog[0], revision: 3, heading: 'Estudos', excerpt: 'Aprender TypeScript para construir interfaces.' };
+    const transport = vi.fn<typeof fetch>(async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      return body.tools ? Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'read_notes', arguments: JSON.stringify({ noteIds: [source.id], query: '' }) } }] } }] })
+        : Response.json({ choices: [{ message: { content: 'Você planejou aprender TypeScript [N1].' } }] });
+    });
+    const provider = new ModelProvider({ provider: 'groq', model: 'model', apiKey: 'test-secret' }, transport);
+    const input = { ...request, message: 'quais sao meus futuros objetivos', knowledgeCatalog: catalog, knowledgeCount: 51, readKnowledge: () => [source] };
+    expect(await provider.respond(input, undefined, undefined, undefined, true)).toMatchObject({ knowledgePlan: { noteIds: [source.id], query: '' } });
+    expect(await provider.respond({ ...input, readKnowledge: undefined, knowledgeContext: [source], knowledgeOnly: true, privateOnly: true })).toMatchObject({ message: expect.stringContaining('[N1]') });
+    const first = JSON.parse(String(transport.mock.calls[0][1]?.body)); const final = JSON.parse(String(transport.mock.calls[1][1]?.body));
+    expect(first.messages[0].content).toContain(catalog[50].id);
+    expect(final.messages[0].content).not.toContain('Catálogo atual');
+    expect(final.messages[0].content).not.toContain(catalog[50].title);
+    expect(final.messages[0].content).toContain(source.excerpt);
+    expect(final.messages[0].content).toContain(source.path);
+    expect(final.messages[0].content).toContain('"reference":"N1"');
+    expect(final.messages[0].content).toContain('não leitura completa do cofre');
+    expect(final.messages[0].content.length).toBeLessThan(first.messages[0].content.length);
+    expect(final.tools).toBeUndefined();
+  });
   it.each([{}, { choices: [] }, { choices: [{ message: { content: ' ' } }] }])('rejeita respostas vazias %j', async data => {
     const provider = new ModelProvider({ provider: 'groq', model: 'model', apiKey: 'test-secret' }, async () => Response.json(data));
     await expect(provider.respond(request)).rejects.toThrow('texto válido');
