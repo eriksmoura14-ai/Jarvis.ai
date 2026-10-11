@@ -29,6 +29,7 @@ interface VoiceSceneProps {
   reply: string;
   reception?: ReactNode;
   proposal?: ReactNode;
+  knowledge?: ReactNode;
   draft: string;
   storageError: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -76,6 +77,7 @@ export function VoiceScene(props: VoiceSceneProps) {
         {props.transcript && <p className="scene-transcript"><span>VOCÊ</span>{props.transcript}</p>}
         {props.reply && <p className="scene-reply"><span>JARVIS</span>{props.reply}</p>}
         <SearchSources sources={props.sources} info={props.searchInfo} />
+        {props.knowledge}
         {props.proposal}
         {!props.transcript && !props.reply && <p className="scene-example">Experimente: <span>“Jarvis, que horas são?”</span></p>}
       </div>

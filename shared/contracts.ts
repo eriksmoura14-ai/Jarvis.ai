@@ -1,4 +1,5 @@
 import type { PersonalProject, ProjectProposal } from './projects.js';
+import type { KnowledgeNoteSummary, KnowledgeSource } from './knowledge.js';
 
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_CONTEXT_MESSAGES = 10;
@@ -19,17 +20,18 @@ export interface ChatRequest {
 export interface ChatResponse {
   id: string;
   message: string;
-  command: 'help' | 'greeting' | 'time' | 'date' | 'calculate' | 'note-add' | 'note-list' | 'note-clear' | 'memory' | 'unknown' | 'conversation' | 'search';
+  command: 'help' | 'greeting' | 'time' | 'date' | 'calculate' | 'note-add' | 'note-list' | 'note-clear' | 'memory' | 'unknown' | 'conversation' | 'search' | 'knowledge';
   provider: ProviderName;
   createdAt: string;
   sources?: SearchSource[];
   webSearch?: WebSearchInfo;
   timings?: ChatTimings;
   proposal?: ProjectProposal;
+  knowledgeSources?: KnowledgeSource[];
 }
 export interface ChatTimings { preparationMs: number; answerMs: number; saveMs: number; totalMs: number; firstTextMs?: number }
 export type ChatStreamEvent = { type: 'ready' } | { type: 'text'; text: string } | { type: 'result'; response: ChatResponse } | { type: 'error'; error: string };
-export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; streaming?: true; projects?: { enabled: true }; interpretation?: { enabled: true }; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
+export interface HealthResponse { status: 'ok'; provider: ProviderName; version: string; revision?: string; streaming?: true; projects?: { enabled: true }; knowledge?: { enabled: true }; interpretation?: { enabled: true }; ai?: { configured: true; provider: 'groq' | 'ollama'; model: string }; webSearch?: { enabled: true }; speech?: { configured: true; provider: 'elevenlabs' } }
 export interface AssistantProvider {
   readonly name: ProviderName;
   respond(request: ChatRequest, signal?: AbortSignal, onText?: (text: string) => void): Promise<Omit<ChatResponse, 'id' | 'createdAt'>>;
@@ -47,8 +49,9 @@ export interface Message {
   provider?: ProviderName;
   sources?: SearchSource[];
   webSearch?: WebSearchInfo;
+  knowledgeSources?: KnowledgeSource[];
 }
 
 export interface PersonalMemory { id: string; content: string; createdAt: string }
-export interface PersonalSnapshot { history: Message[]; memories: PersonalMemory[]; notes: { content: string }[]; generation: number; storage: 'sqlite' | 'supabase'; projects?: PersonalProject[]; projectsRevision?: number }
+export interface PersonalSnapshot { history: Message[]; memories: PersonalMemory[]; notes: { content: string }[]; generation: number; storage: 'sqlite' | 'supabase'; projects?: PersonalProject[]; projectsRevision?: number; library?: KnowledgeNoteSummary[]; libraryRevision?: number }
 export type PersonalSession = { enabled: false } | { enabled: true; authenticated: boolean; storage: 'sqlite' | 'supabase' };

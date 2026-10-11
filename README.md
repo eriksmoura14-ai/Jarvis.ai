@@ -14,6 +14,8 @@ Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitH
 
 **Projetos e tarefas:** [objetivos, etapas, prazos, progresso e propostas do chat para revisar](docs/projects.md). No modo pessoal, os dados acompanham sua conta no celular e computador. O painel funciona sem IA; planos propostos pela IA só são aplicados após **Confirmar proposta**. Reutiliza o Supabase existente, sem nova chave ou SQL.
 
+**Obsidian:** [importar notas Markdown e conversar com referências reais](docs/obsidian.md). Revise os arquivos antes de salvar; as cópias acompanham a conta pessoal nos aparelhos. Importação manual, sem editar o cofre original, instalar plugins ou configurar novas chaves.
+
 **Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O modelo pode solicitar pesquisa pública ou propor mudanças em projetos pessoais para confirmação. O aplicativo não controla o sistema operacional.
 
 ## Começar
@@ -46,6 +48,7 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm run test:e2e` | Testes de navegador em desktop e celular |
 | `npm run test:personal` | Login, memórias e sincronização com SQLite em desktop/celular |
 | `npm run test:projects` | Projetos, tarefas e revisão de propostas em desktop/celular |
+| `npm run test:knowledge` | Importação Markdown, consulta, referências e atualização em desktop/celular |
 | `npm run check` | Testes, build e testes de navegador |
 
 `npm start` exige `npm run build` e deve ser executado na raiz do projeto. Fastify serve `dist/` e `/api` na mesma origem. Para testar essa versão com Playwright, execute `E2E_PRODUCTION=1 npm run test:e2e` em Bash, após o build. No PowerShell: `$env:E2E_PRODUCTION='1'; npm run test:e2e`.
@@ -90,6 +93,7 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
 - Modo opcional para um único dono: login por senha, sessões revogáveis, memória salva por pedido explícito, exclusão individual, histórico/notas sincronizados e importação consentida de mensagens antigas. SQLite local ou Supabase para persistir no Render; [configuração](docs/personal.md).
+- Biblioteca pessoal de Markdown do Obsidian: seleção e revisão, importação, atualização autorizada, busca de trechos, leitura segura e exclusão de cópias. Referências `[N1]` abrem a nota consultada; sem IA, mostra os trechos reais. Até 100 notas/1 MB, sem sincronização automática com o cofre.
 - Sem login configurado, histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
 - Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
 - Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, com a escuta comum desligada durante a reprodução. A interrupção experimental “Jarvis, pare”, quando ativada, escuta somente esse comando durante a fala. Cada escuta tem limite de 60 segundos.
@@ -161,10 +165,14 @@ shared/contracts.ts       Tipos de mensagem e contratos HTTP
 shared/context.ts         Seleção limitada do contexto recente
 shared/search.ts          Comandos de pesquisa e validação de fontes
 shared/projects.ts        Projetos, tarefas, validação e prioridades
+shared/knowledge.ts       Contratos e limites da biblioteca Markdown
+server/personal/knowledge.ts       API protegida de importação/leitura/exclusão
+server/personal/knowledge-index.ts Busca lexical por seções e trechos
 supabase/personal.sql     Tabela privada com RLS para o dono
 e2e/                      Testes Playwright
 e2e-personal/             Login, memória e sincronização em navegador
 e2e-projects/             Projetos e confirmação de propostas em navegador
+e2e-knowledge/            Importação de notas e referências em navegador
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
@@ -174,7 +182,7 @@ Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando 
 
 ### Dados e privacidade
 
-No **modo pessoal autenticado**, histórico, notas, memórias explícitas, projetos/tarefas, sessões e orçamento de IA ficam no backend SQLite/Supabase. O histórico pessoal não é gravado no localStorage; somente preferências de interface/voz permanecem locais. Memórias e seleções de notas/projetos podem acompanhar perguntas à IA. Consulte [dados, exclusão e ativação](docs/personal.md). Não há migração automática nem backup próprio.
+No **modo pessoal autenticado**, histórico, notas, memórias explícitas, projetos/tarefas, cópias Markdown importadas, sessões e orçamento de IA ficam no backend SQLite/Supabase. O histórico pessoal não é gravado no localStorage; somente preferências de interface/voz permanecem locais. Memórias e seleções de notas/projetos/arquivos Markdown podem acompanhar perguntas à IA. Consulte [dados, exclusão e ativação](docs/personal.md). Não há migração automática nem backup próprio.
 
 Os parágrafos abaixo descrevem o **modo servidor sem login configurado**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
 
@@ -216,6 +224,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 - [ ] Escolher uma voz disponível em português; verificar bloqueio de reprodução automática e **Ouvir resposta**.
 - [ ] Testar conversa contínua, conclusão da escuta e interrupção pelo botão central; registrar quando o navegador exige outro toque.
 - [ ] Trocar de aplicativo, bloquear/desbloquear a tela e retornar; confirmar a pausa e a necessidade de retomar manualmente.
+- [ ] Importar um arquivo `.md` pelo seletor do celular, revisar, consultar por voz e abrir a referência; conferir a mesma nota no computador.
 - [ ] Sem reconhecimento/voz, enviar por digitação; verificar histórico e notas após recarga.
 
 ### Checklist manual no Xbox
@@ -236,7 +245,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
 2. Ativar e validar o modo pessoal com Supabase no seu serviço; acrescentar backup/exportação e exclusão individual de notas.
 3. Ampliar projetos/tarefas com edição, exclusão e exportação; planejar lembretes e calendário com opt-in antes de integrações externas.
-4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
+4. Evoluir a biblioteca Obsidian com exportação/backup, recuperação por significado e propostas de novas notas para revisão; a integração atual importa cópias manualmente.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 
 JARVIS AI é um projeto independente de portfólio. Não possui afiliação com Marvel, Microsoft ou seus produtos.

@@ -7,6 +7,7 @@ Teste pelo computador ou celular:
 - `Como posso organizar meus estudos?`: conversa, com memórias e notas pertinentes quando disponíveis.
 - `Qual meu nome?`: consulta local ao perfil, mesmo com a opção web marcada.
 - `O que eu anotei sobre meu projeto Jarvis?`: resposta com trechos das suas notas pessoais.
+- `O que eu já estudei sobre React no meu Obsidian?`: consulta cópias Markdown importadas e mostra referências `[N1]`; sem IA, devolve trechos reais.
 - `Tem novidades de tecnologia e inteligência artificial hoje?`: pode solicitar até três consultas públicas complementares.
 - `E o que mudou nisso hoje?`: pode continuar o último tema público pesquisado no contexto ativo da conta. Sem assunto identificável, deve pedir esclarecimento.
 - `Oi Jarvis, pesquise para mim sobre a guerra na Ucrânia`: pesquisa explícita também sem IA, removendo a introdução falada e tentando alternativas quando nada foi encontrado.
@@ -25,10 +26,12 @@ Groq SSE e Ollama NDJSON podem entregar argumentos da ferramenta em partes; esse
 
 O servidor autenticado recupera até cinco trechos de notas, com mil caracteres cada, ordenados por palavras pertinentes e recência. É uma seleção limitada por palavras, sem embeddings; prefira um assunto específico. `notas` continua listando notas localmente. O modelo recebe os trechos e memórias para responder, pela integração existente. Não são enviados diretamente ao buscador.
 
-Consultas propostas pela IA precisam compartilhar um assunto público com a pergunta ou a última pesquisa registrada no contexto ativo. O filtro recusa termos privados do contexto/memórias/notas/projetos ausentes desses assuntos, além de URLs, ferramentas desconhecidas e formatos inválidos. A separação combina instruções e filtros de palavras, sem classificação infalível. Não inclua credenciais ou dados sensíveis em pedidos de pesquisa.
+Consultas propostas pela IA precisam compartilhar um assunto público com a pergunta ou a última pesquisa registrada no contexto ativo. O filtro recusa termos privados do contexto/memórias/notas/projetos e da biblioteca Markdown ausentes desses assuntos, além de URLs, ferramentas desconhecidas e formatos inválidos. A separação combina instruções e filtros de palavras, sem classificação infalível. Não inclua credenciais ou dados sensíveis em pedidos de pesquisa.
 
-Editar/apagar memórias, alterar perfil, limpar a conversa, apagar notas ou alterar projetos invalida o contexto antigo e respostas pendentes. O histórico visível pode preservar pesquisas antigas sem alimentar continuações após o reinício. Uma inferência que já recebeu dados não pode ser desfeita no provedor.
+Editar/apagar memórias, alterar perfil, limpar a conversa, apagar notas, alterar projetos ou importar/atualizar/excluir Markdown invalida o contexto antigo e respostas pendentes. O histórico visível pode preservar pesquisas antigas sem alimentar continuações após o reinício. Uma inferência que já recebeu dados não pode ser desfeita no provedor.
 
 Não há novas variáveis ou migração SQL. Reutilize Groq/Ollama, senha e SQLite/Supabase existentes. Modelos sem suporte a ferramentas podem recusar perguntas livres nessa configuração; selecione um modelo compatível. Buscadores podem bloquear consultas. O comportamento real do modelo e o áudio/controle físico no celular/Xbox precisam de teste no serviço.
 
 `npm test` cobre consultas complementares, prioridade pessoal, continuidade pública, reinício, ferramentas Groq/Ollama, cancelamento e exclusão de notas durante resposta. Playwright cobre indicador, detalhes de consultas, histórico e layout desktop/celular. Provedores simulados não demonstram qualidade de inferência real: confira fontes, datas e comportamento na sua conta.
+
+A [biblioteca Obsidian](obsidian.md) recupera até cinco trechos de 1.100 caracteres, no máximo dois por nota. Pedidos explícitos sobre a biblioteca e continuações reconhecidas recebem prioridade pessoal sobre a opção web. Referências são geradas pelo backend a partir das notas reais; marcadores inexistentes são removidos da resposta final. Consultas públicas não recebem o corpus completo, mas o modelo pode receber trechos pertinentes como contexto.

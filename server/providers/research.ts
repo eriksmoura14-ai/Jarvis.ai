@@ -16,7 +16,7 @@ export class ResearchProvider implements AssistantProvider {
     const commandText = request.message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
     const localPersonal = /^(?:anot(?:ar|e)|nota)\s+|^(?:apagar notas|notas|minhas notas|listar notas)[.!?]*$/i.test(commandText);
     const projectIntent = !!request.projectData && /^(?:jarvis[,.:!]?\s+)?(?:crie|criar|organize|organizar|monte|montar|planeje|planejar|conclui|terminei|adicione|adicionar)\b/i.test(commandText) && /\b(?:projetos?|tarefas?|planos?|etapas?)\b/i.test(commandText);
-    if (localPersonal || personalQuestion(request.message) || projectIntent) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
+    if (localPersonal || personalQuestion(request.message) || projectIntent || request.knowledgeOnly) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
     const explicit = searchQuery({ ...request, webSearch: false });
     let plan: SearchPlan | undefined;
     if (explicit !== undefined || request.webSearch) {

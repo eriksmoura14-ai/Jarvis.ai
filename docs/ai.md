@@ -130,3 +130,7 @@ já recebeu dados não pode ser retirado do provedor retroativamente.
 `voice=true` pede frases curtas e linguagem falada ao modelo; não garante qualidade
 humana. [Tempos da conversa](conversation.md) separam espera da resposta e da voz,
 sem telemetria externa ou promessas de aceleração medidas apenas com fixtures.
+
+## Contexto do Obsidian
+
+No modo pessoal, [notas Markdown importadas](obsidian.md) podem fornecer até cinco trechos pertinentes para a IA. São dados privados, tratados como conteúdo de consulta, sem permissão para executar instruções ou modificar arquivos. O backend gera referências reais `[N1]` e não oferece pesquisa pública em consultas explícitas à biblioteca. Não há nova chave, modelo de embeddings ou migração SQL.

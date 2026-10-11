@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+.knowledge-entry { display: flex; align-items: center; justify-content: center; gap: .75rem; flex-wrap: wrap; width: 100%; margin: .5rem 0 1rem; }
+.knowledge-entry small { color: #8fa9bd; font-size: .75rem; }
+.knowledge-panel, .knowledge-sources { min-width: 0; overflow-wrap: anywhere; }
+.knowledge-panel h3 { color: #b1dfff; margin: .8rem 0; }
+.knowledge-import, .knowledge-search { display: grid; gap: .65rem; margin: 1rem 0; }
+.knowledge-panel input:not([type="checkbox"]) { width: 100%; min-height: 44px; background: #111e2d; border: 1px solid #34516a; border-radius: .7rem; padding: .65rem; font: inherit; color: #d6e7f4; min-width: 0; }
+.knowledge-panel input[type="file"] { font-size: .8rem; }
+.knowledge-panel input::file-selector-button { min-height: 44px; border-radius: .5rem; border: 1px solid #34516a; background: #1c3850; color: #d6e7f4; margin-right: .5rem; }
+.knowledge-panel small { display: block; color: #8fa9bd; font-size: .75rem; }
+.knowledge-draft, .knowledge-note { border: 1px solid #294257; border-radius: .7rem; padding: .75rem; margin: .6rem 0; }
+.knowledge-markdown { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; line-height: 1.6; margin: .7rem 0; }
+.knowledge-replace { display: flex; align-items: center; gap: .7rem; font-size: .85rem; min-height: 44px; }
+.knowledge-replace input { width: 22px; height: 22px; flex-shrink: 0; }
+.knowledge-list { padding: 0; list-style: none; }
+.knowledge-list li { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0; }
+.knowledge-list li > button:first-child { flex: 1; min-width: 140px; text-align: left; }
+.knowledge-list li > [role="group"] { width: 100%; padding: .75rem; border: 1px solid #735044; border-radius: .7rem; }
+.knowledge-sources { text-align: left; font-size: .85rem; width: 100%; max-width: 640px; margin: .8rem 0; border-top: 1px solid #294257; padding-top: .8rem; }
+.knowledge-sources > small { color: #8fa9bd; }
+.knowledge-sources summary, .knowledge-draft summary { min-height: 44px; cursor: pointer; padding: .75rem 0; }
+.knowledge-excerpt { white-space: pre-wrap; color: #a9bed0; margin: .7rem 0; line-height: 1.6; }
+
 .projects-panel form { display: grid; gap: .65rem; margin: 1rem 0; }
 .projects-panel input, .projects-panel textarea { width: 100%; min-height: 44px; padding: .75rem; border: 1px solid #34516a; border-radius: .7rem; background: #111e2d; color: #d6e7f4; font: inherit; }
 .projects-panel textarea { min-height: 90px; resize: vertical; }

@@ -74,14 +74,15 @@ conexão incompleta nem troca automaticamente para armazenamento temporário.
   progresso na conta. O modelo pode propor mudanças para revisão, sem salvar
   automaticamente. Veja [uso, confirmação e limites](projects.md). Não há novo
   SQL ou variável para ativar o painel em uma conta pessoal já configurada.
+- **Notas do Obsidian** importa cópias `.md` após revisão, com busca de trechos, referências e atualização autorizada. A biblioteca acompanha a conta, sem novo SQL ou variável; [uso e limites](obsidian.md).
 - As últimas 100 mensagens ficam na conta. A interface atualiza ao voltar para a
   aba e a cada 10 segundos enquanto está visível. A IA recebe o contexto recente
   armazenado no servidor, permitindo continuar uma conversa em outro aparelho.
   A janela enviada à IA é de até 10 mensagens e 8.000 caracteres, com até 2.000
-  caracteres por mensagem. Não equivale a recordar todo o histórico. A IA não
-  recebe seleções limitadas de notas e projetos pertinentes; use `notas` ou
+  caracteres por mensagem. Não equivale a recordar todo o histórico. A IA também
+  recebe seleções limitadas de notas, projetos e Markdown pertinentes; use `notas` ou
   `meus projetos` para consultar as listas locais.
-- **Limpar conversa** remove o histórico da conta, preservando notas, memórias e projetos.
+- **Limpar conversa** remove o histórico da conta, preservando notas, memórias, projetos e a biblioteca Markdown.
   Respostas que terminarem depois dessa limpeza não restauram o histórico apagado.
 - **Sair da conta** revoga a sessão do aparelho. Mudar `JARVIS_PASSWORD` e reiniciar
   o serviço invalida todas as sessões anteriores; os dados da conta são preservados.
@@ -197,3 +198,5 @@ No **Xbox Edge**, ainda precisam de teste físico: teclado virtual da senha,
 direcional/A/B no login e nas listas, armazenamento do cookie, redimensionamento,
 permissão do microfone, reconhecimento e síntese. Os testes mobile de Chromium
 não validam o hardware Xbox nem as vozes reais de cada celular.
+
+A biblioteca Markdown permite até 100 cópias/1 MB no documento privado existente. Importar, atualizar ou excluir uma cópia reinicia o contexto ativo e invalida respostas pendentes. Excluir remove referências estruturadas da nota no histórico; texto citado em respostas antigas permanece até limpar a conversa. Os originais no Obsidian não são alterados.

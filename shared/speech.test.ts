@@ -6,6 +6,7 @@ describe('texto para voz por IA', () => {
     expect(speechText('**Resultado:** 12,5. [Fonte](https://example.com) [1] https://example.com/test')).toBe('Resultado: 12,5. Fonte');
     expect(speechText('Veja:\n```ts\nlet x = 1;\n```\nPronto.')).toBe('Veja: Trecho de código disponível no texto. Pronto.');
     expect(speechText('Uma fonte [1]. Mais detalhes [2], se quiser.')).toBe('Uma fonte. Mais detalhes, se quiser.');
+    expect(speechText('Você anotou isso [N1]. Outro trecho [N2].')).toBe('Você anotou isso. Outro trecho.');
   });
   it('limita a leitura sem afirmar que leu a resposta inteira', () => {
     const text = speechText('Uma resposta longa. '.repeat(200));

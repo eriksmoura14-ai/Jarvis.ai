@@ -23,3 +23,6 @@ jobs:
       - run: npm run test:projects
         env:
           E2E_PRODUCTION: '1'
+      - run: npm run test:knowledge
+        env:
+          E2E_PRODUCTION: '1'

@@ -4,6 +4,8 @@ import type { NoteStore } from '../database.js';
 import { conversationContext } from '../../shared/context.js';
 import { memorySlot, personalProfile, sameMemory } from '../../shared/memory.js';
 import { MAX_PROJECTS, MAX_TASKS, validChange, type PersonalProject, type ProjectChange } from '../../shared/projects.js';
+import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, validMarkdownFiles, byteLength, pathKey, type KnowledgeNote, type MarkdownFile } from '../../shared/knowledge.js';
+import { markdownTitle } from './knowledge-index.js';
 
 export class PersonalError extends Error {
   constructor(message: string, readonly statusCode = 503) { super(message); }
@@ -14,6 +16,7 @@ interface Document {
   sessions: { hash: string; version: string; expires: number }[];
   contextHistory?: Message[];
   projects?: PersonalProject[]; projectsRevision?: number; appliedProjectProposals?: string[];
+  knowledge?: KnowledgeNote[]; libraryRevision?: number;
 }
 const empty = (): Document => ({ history: [], memories: [], notes: [], generation: 0, usage: { day: '', count: 0 }, sessions: [] });
 function boundedHistory(messages: Message[]): Message[] {
@@ -94,9 +97,40 @@ export class PersonalStore implements NoteRepository {
     const lastSearch = [...activeHistory].reverse().find(message => message.role === 'assistant' && message.webSearch);
     const searchContext = lastSearch?.webSearch;
     const publicSearchTerms = (lastSearch?.sources ?? []).map(source => source.title + ' ' + source.snippet).join(' ').slice(0, 4500);
-    return { version, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name, projects: value.projects ?? [], projectsRevision: value.projectsRevision ?? 0 } };
+    const knowledge = value.knowledge ?? [];
+    return { version, knowledge, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name, projects: value.projects ?? [], projectsRevision: value.projectsRevision ?? 0, library: knowledge.map(({ content: _content, ...summary }) => summary), libraryRevision: value.libraryRevision ?? 0 } };
   }
   async snapshot(): Promise<PersonalSnapshot> { return (await this.snapshotRecord()).snapshot; }
+  async importKnowledge(files: MarkdownFile[], revision: number, replace: boolean) {
+    if (!validMarkdownFiles(files)) throw new PersonalError('Selecione até 20 arquivos .md UTF-8, sem caminhos repetidos ou ocultos: até 50 KB por nota e 250 KB por importação.', 400);
+    return this.change(value => {
+      if ((value.libraryRevision ?? 0) !== revision) throw new PersonalError('A biblioteca mudou em outro aparelho. Confira as notas e revise a importação novamente.', 409);
+      const notes = [...(value.knowledge ?? [])]; const now = new Date().toISOString();
+      let added = 0; let updated = 0; let unchanged = 0;
+      for (const file of files) {
+        const path = file.path.normalize('NFC'); const content = file.content.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+        const index = notes.findIndex(note => pathKey(note.path) === pathKey(path));
+        const existing = notes[index];
+        if (existing?.content === content) { unchanged++; continue; }
+        if (existing && !replace) throw new PersonalError('Há notas alteradas com o mesmo caminho. Marque a atualização das cópias existentes depois de revisar.', 409);
+        const note = { id: existing?.id ?? randomUUID(), path, content, title: markdownTitle({ path, content }), bytes: byteLength(content), revision: (existing?.revision ?? 0) + 1, updatedAt: now };
+        if (existing) { notes[index] = note; updated++; } else { notes.push(note); added++; }
+      }
+      if (notes.length > MAX_KNOWLEDGE_NOTES || notes.reduce((sum, note) => sum + note.bytes, 0) > MAX_LIBRARY_BYTES) throw new PersonalError('A biblioteca permite até 100 notas e 1 MB de texto. Remova cópias que não precisa antes de importar.', 409);
+      if (added || updated) { value.knowledge = notes; value.libraryRevision = (value.libraryRevision ?? 0) + 1; this.resetContext(value); }
+      return { ok: true, added, updated, unchanged };
+    });
+  }
+  async deleteKnowledge(id: string, revision: number) {
+    return this.change(value => {
+      if ((value.libraryRevision ?? 0) !== revision) throw new PersonalError('A biblioteca mudou. Confira as notas antes de remover a cópia.', 409);
+      const notes = value.knowledge ?? [];
+      if (!notes.some(note => note.id === id)) throw new PersonalError('Esta cópia da nota já foi removida.', 404);
+      value.knowledge = notes.filter(note => note.id !== id); value.libraryRevision = (value.libraryRevision ?? 0) + 1;
+      value.history = value.history.map(message => ({ ...message, ...(message.knowledgeSources ? { knowledgeSources: message.knowledgeSources.filter(source => source.id !== id) } : {}) }));
+      this.resetContext(value); return { ok: true };
+    });
+  }
   async applyProjectChange(change: ProjectChange, revision: number, proposal?: { id: string; generation: number }) {
     if (!validChange(change)) throw new PersonalError('Proposta de projeto inválida.', 400);
     return this.change(value => {

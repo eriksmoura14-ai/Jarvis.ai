@@ -21,6 +21,9 @@ import { SpeechError, SpeechProvider, type SpeechConfig } from './speech.js';
 import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
 import { selectedNotes, selectedProjects, validatedProjectChange } from './interpretation.js';
 import { ProjectProposals, registerProjectRoutes, projectCommand } from './personal/projects.js';
+import { registerKnowledgeRoutes } from './personal/knowledge.js';
+import { retrieveKnowledge, knowledgeReply, knowledgeFollowupSubject } from './personal/knowledge-index.js';
+import { knowledgeQuestion } from '../shared/knowledge.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -79,7 +82,7 @@ export async function buildApp(options: AppOptions = {}) {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', streaming: true, webSearch: { enabled: true },
-      ...(personal ? { projects: { enabled: true } } : {}),
+      ...(personal ? { projects: { enabled: true }, knowledge: { enabled: true } } : {}),
       ...(provider instanceof HybridProvider ? { interpretation: { enabled: true } } : {}),
       ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
@@ -102,6 +105,7 @@ export async function buildApp(options: AppOptions = {}) {
     ? { enabled: true, authenticated: await auth.authenticated(request), storage: personal.name } : { enabled: false });
   if (personal && auth) {
     registerProjectRoutes(app, personal, projectProposals);
+    registerKnowledgeRoutes(app, personal);
     app.post<{ Body: { password: string } }>('/api/personal/login', {
       config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
       schema: { body: { type: 'object', additionalProperties: false, required: ['password'], properties: { password: { type: 'string', minLength: 1, maxLength: 200 } } } },
@@ -186,9 +190,14 @@ export async function buildApp(options: AppOptions = {}) {
       const record = personal ? await personal.snapshotRecord() : undefined;
       controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
+      const previousQuestion = knowledgeFollowupSubject(record?.context ?? [], request.body.message);
+      const knowledgeFollowup = !!previousQuestion;
+      const knowledgeQuery = request.body.message + (knowledgeFollowup ? ' ' + previousQuestion : '');
+      const knowledgeContext = record ? retrieveKnowledge(record.knowledge, knowledgeQuery) : [];
       const body = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
         personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, request.body.message),
-        projectData: selectedProjects(record.snapshot.projects ?? [], request.body.message), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []) } : request.body;
+        projectData: selectedProjects(record.snapshot.projects ?? [], request.body.message), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
+        knowledgeContext, privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: knowledgeQuestion(request.body.message) || knowledgeFollowup } : request.body;
       const prepared = performance.now();
       let lastEmit = -Infinity;
       const progress = emit ? (text: string) => {
@@ -197,11 +206,13 @@ export async function buildApp(options: AppOptions = {}) {
         // Snapshots allow research fallback to replace a failed partial summary.
         if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: text.slice(0, 6000) }); }
       } : undefined;
-      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot) : undefined) ?? await assistant.respond(body, controller.signal, progress);
-      const { proposal: _proposal, ...safe } = raw;
+      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot) : undefined)
+        ?? (record ? knowledgeReply(knowledgeQuery, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined) ?? await assistant.respond(body, controller.signal, progress);
+      const { proposal: _proposal, knowledgeSources: _knowledgeSources, ...safe } = raw;
       const change = 'projectChange' in raw ? validatedProjectChange(raw.projectChange, body) : undefined;
       if ('projectChange' in safe) delete safe.projectChange;
-      const response: ChatResponse = { ...safe, id: randomUUID(), createdAt: new Date().toISOString(), ...(change && snapshot ? { proposal: projectProposals.create(change, snapshot) } : {}) };
+      const noteSources = knowledgeContext.length && (raw.provider !== 'local' || raw.command === 'knowledge') ? knowledgeContext : undefined;
+      const response: ChatResponse = { ...safe, message: safe.message.replace(/\[N\d+\]/g, reference => noteSources?.some(source => `[${source.reference}]` === reference) ? reference : ''), id: randomUUID(), createdAt: new Date().toISOString(), ...(noteSources ? { knowledgeSources: noteSources } : {}), ...(change && snapshot ? { proposal: projectProposals.create(change, snapshot) } : {}) };
       controller.signal.throwIfAborted();
       const answered = performance.now();
       if (personal && snapshot) {
@@ -209,7 +220,7 @@ export async function buildApp(options: AppOptions = {}) {
           ? '\n\nLista limitada. Consulte as notas completas em Preferências → Memória pessoal.' : '\n\nTexto limitado a 6000 caracteres.');
         const appended = await personal.append([{ id: randomUUID(), role: 'user', content: request.body.message, createdAt: response.createdAt },
           { id: response.id, role: 'assistant', content: response.message, createdAt: response.createdAt, provider: response.provider,
-            ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}) }], command?.generation ?? snapshot.generation);
+            ...(response.sources ? { sources: response.sources } : {}), ...(response.webSearch ? { webSearch: response.webSearch } : {}), ...(response.knowledgeSources ? { knowledgeSources: response.knowledgeSources } : {}) }], command?.generation ?? snapshot.generation);
         if (!appended) throw new PersonalError('Sua memória ou conversa mudou enquanto eu respondia. Envie a pergunta novamente para usar o contexto atualizado.', 409);
       }
       response.timings = { preparationMs: Math.round(prepared - started), answerMs: Math.round(answered - prepared),

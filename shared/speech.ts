@@ -4,7 +4,7 @@ export const MAX_SPEECH_CHARACTERS = 1200;
 export function speechText(text: string) {
   const prose = text.replace(/```[\s\S]*?```/g, ' Trecho de código disponível no texto. ')
     .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, '$1')
-    .replace(/https?:\/\/\S+/g, '').replace(/\[\d+\]/g, '')
+    .replace(/https?:\/\/\S+/g, '').replace(/\[(?:N)?\d+\]/g, '')
     .replace(/[*_`#]/g, '').replace(/\s+/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim();
   if (prose.length <= MAX_SPEECH_CHARACTERS) return prose;
   const excerpt = prose.slice(0, MAX_SPEECH_CHARACTERS - 60);

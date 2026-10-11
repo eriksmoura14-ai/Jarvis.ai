@@ -1,5 +1,6 @@
 import type { Message } from '../../shared/contracts';
 import { validSources, validSearchInfo } from '../../shared/search';
+import { validKnowledgeSources } from '../../shared/knowledge';
 
 export const HISTORY_KEY = 'jarvis.history.v1';
 const SESSION_KEY = 'jarvis.session.v1';
@@ -37,6 +38,7 @@ export function decodeHistory(value: string | null): Message[] {
       createdAt: message.createdAt, provider: message.provider,
       ...(validSources(message.sources) ? { sources: message.sources } : {}),
       ...(validSearchInfo(message.webSearch) ? { webSearch: message.webSearch } : {}),
+      ...(validKnowledgeSources(message.knowledgeSources) ? { knowledgeSources: message.knowledgeSources } : {}),
     }));
   } catch { return []; }
 }

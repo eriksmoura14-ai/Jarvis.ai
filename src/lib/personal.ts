@@ -1,6 +1,7 @@
 import type { PersonalSession, PersonalSnapshot } from '../../shared/contracts';
 import { decodeHistory } from './storage';
 import { validProjects } from '../../shared/projects';
+import { validKnowledgeList } from '../../shared/knowledge';
 
 let cached: { etag: string; snapshot: PersonalSnapshot } | undefined;
 let cacheEpoch = 0;
@@ -39,5 +40,6 @@ export async function personalSnapshot(signal?: AbortSignal): Promise<PersonalSn
   if (!Array.isArray(data.history) || !Array.isArray(data.memories) || data.memories.length > 30 || data.memories.some(memory => typeof memory.id !== 'string' || typeof memory.content !== 'string' || memory.content.length > 500)
     || !Array.isArray(data.notes) || !Number.isSafeInteger(data.generation) || !['sqlite', 'supabase'].includes(data.storage)) throw new Error('O servidor retornou dados pessoais inválidos.');
   if (data.projects !== undefined && !validProjects(data.projects) || data.projectsRevision !== undefined && (!Number.isSafeInteger(data.projectsRevision) || data.projectsRevision < 0)) throw new Error('O servidor retornou projetos inválidos.');
-  return { ...data, projects: data.projects ?? [], projectsRevision: data.projectsRevision ?? 0, history: decodeHistory(JSON.stringify(data.history)) };
+  if (data.library !== undefined && !validKnowledgeList(data.library) || data.libraryRevision !== undefined && (!Number.isSafeInteger(data.libraryRevision) || data.libraryRevision < 0)) throw new Error('O servidor retornou uma biblioteca inválida.');
+  return { ...data, library: data.library ?? [], libraryRevision: data.libraryRevision ?? 0, projects: data.projects ?? [], projectsRevision: data.projectsRevision ?? 0, history: decodeHistory(JSON.stringify(data.history)) };
 }
