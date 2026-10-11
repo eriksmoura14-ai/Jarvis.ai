@@ -2,7 +2,7 @@ import type { AssistantProvider, ChatRequest } from '../../shared/contracts.js';
 import { LocalProvider } from './local.js';
 import { ModelError, ModelProvider } from './model.js';
 import type { SearchResults } from '../search.js';
-import type { AssistantInput } from '../interpretation.js';
+import { validatedKnowledgePlan, type AssistantInput } from '../interpretation.js';
 
 export class HybridProvider implements AssistantProvider {
   readonly name: 'groq' | 'ollama';
@@ -24,7 +24,7 @@ export class HybridProvider implements AssistantProvider {
   async planResearch(request: AssistantInput, signal?: AbortSignal) {
     return this.respondModel(request, signal, undefined, undefined, true);
   }
-  private async respondModel(request: AssistantInput, signal?: AbortSignal, research?: SearchResults, onText?: (text: string) => void, interpret = false) {
+  private async respondModel(request: AssistantInput, signal?: AbortSignal, research?: SearchResults, onText?: (text: string) => void, interpret = false): Promise<Awaited<ReturnType<ModelProvider['respond']>>> {
     const now = Date.now();
     this.requests = this.requests.filter(time => now - time < 60_000);
     if (this.active >= 2 || this.requests.length >= 6) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
@@ -33,7 +33,15 @@ export class HybridProvider implements AssistantProvider {
     try {
       if (!await this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
       signal?.throwIfAborted();
-      return await this.model.respond(request, signal, onText, research, interpret);
+      const response = await this.model.respond(request, signal, onText, research, interpret);
+      if (!('knowledgePlan' in response)) return response;
+      signal?.throwIfAborted();
+      const plan = validatedKnowledgePlan(response.knowledgePlan, request);
+      if (!plan || !request.readKnowledge) throw new ModelError('Não consegui identificar as notas solicitadas. Diga o título ou assunto.');
+      const knowledgeContext = request.readKnowledge(plan);
+      // Count the second inference against the same minute/day budget. No tool
+      // is offered on this pass, so a model cannot loop or research private text.
+      return await this.respondModel({ ...request, knowledgeContext, knowledgeOnly: true, privateOnly: true, readKnowledge: undefined }, signal, undefined, onText, false);
     }
     finally { this.active--; }
   }

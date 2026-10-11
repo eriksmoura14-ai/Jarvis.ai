@@ -8,7 +8,7 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Ritmo da conversa e recepção:** [resposta progressiva, voz em partes, tempos reais, “Jarvis, pare” e notícias opcionais ao abrir](docs/conversation.md). Não exige novas chaves, variáveis ou tabelas; usa as integrações já configuradas. Notícias e interrupção por voz são ativadas em Preferências, por aparelho.
 
-**Interpretação de pedidos:** [conversa, consulta às notas pessoais e pesquisa automática com consultas complementares](docs/interpretation.md). Com IA compatível, perguntas livres podem solicitar até três buscas, incluindo continuação do último assunto público. Comandos de notas e perguntas pessoais reconhecidas têm prioridade mesmo com a opção web marcada.
+**Interpretação de pedidos:** [conversa contextual, consulta às notas pessoais e pesquisa automática](docs/interpretation.md). Continuações como “no Obsidian”, “explique melhor” e “resuma” usam o assunto ativo. A IA pode consultar até três notas pelo catálogo de títulos quando a busca por palavras não basta, ou solicitar até três buscas públicas complementares. Comandos e pedidos pessoais têm prioridade sobre a opção web marcada.
 
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 

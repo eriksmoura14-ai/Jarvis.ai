@@ -8,11 +8,17 @@ Teste pelo computador ou celular:
 - `Qual meu nome?`: consulta local ao perfil, mesmo com a opção web marcada.
 - `O que eu anotei sobre meu projeto Jarvis?`: resposta com trechos das suas notas pessoais.
 - `O que eu já estudei sobre React no meu Obsidian?`: consulta cópias Markdown importadas e mostra referências `[N1]`; sem IA, devolve trechos reais.
+- `Me explique React`, depois `no Obsidian`: muda a fonte para suas notas sobre o mesmo assunto. Sem assunto anterior, pergunta qual tema ou nota consultar.
+- `notas do Obsidian`: lista títulos e caminhos reais, sem consumir IA. `notas` lista as notas rápidas do JARVIS.
+- `Explique melhor`, `resuma`, `mais curto` ou `dê um exemplo`: transforma a conversa anterior, mesmo com a opção web marcada. Um novo assunto explícito passa a ser o tema atual.
+- `Quais são minhas prioridades?`: com IA, considera memórias, projetos e notas disponíveis; pode consultar notas pelo significado dos títulos. `minhas tarefas` mantém a listagem direta das tarefas registradas. Sem IA, a pergunta de prioridades lista tarefas.
 - `Tem novidades de tecnologia e inteligência artificial hoje?`: pode solicitar até três consultas públicas complementares.
 - `E o que mudou nisso hoje?`: pode continuar o último tema público pesquisado no contexto ativo da conta. Sem assunto identificável, deve pedir esclarecimento.
 - `Oi Jarvis, pesquise para mim sobre a guerra na Ucrânia`: pesquisa explícita também sem IA, removendo a introdução falada e tentando alternativas quando nada foi encontrado.
 
 Não precisa marcar **Pesquisar na web** para perguntas livres com IA. Essa opção força a pesquisa de um assunto público; comandos de notas e perguntas pessoais reconhecidas têm prioridade. Conversa não salva fatos automaticamente. Use `anotar <texto>`, `lembre que <informação>` ou o painel de memória para alterações. No modo pessoal, o modelo também pode propor criar projetos, adicionar tarefas ou concluir uma tarefa atual, sempre com revisão e confirmação na tela. Veja [projetos e tarefas](projects.md). Não há ferramentas para apagar dados ou controlar dispositivos.
+
+`server/conversation.ts` usa o contexto ativo para recuperar o assunto de continuações reconhecidas e selecionar notas/projetos pertinentes. Preserva a frase original para o modelo interpretar; não transforma comandos anteriores em novas ações. Uma mudança isolada para `na web` depois de um pedido pessoal exige que você diga um tema público. A IA recebe instruções para pedir esclarecimento quando houver ambiguidade, distinguir notas de sugestões e planos de realizações. Isso melhora a interpretação, mas não torna o modelo infalível.
 
 ## Arquitetura
 
@@ -26,12 +32,18 @@ Groq SSE e Ollama NDJSON podem entregar argumentos da ferramenta em partes; esse
 
 O servidor autenticado recupera até cinco trechos de notas, com mil caracteres cada, ordenados por palavras pertinentes e recência. É uma seleção limitada por palavras, sem embeddings; prefira um assunto específico. `notas` continua listando notas localmente. O modelo recebe os trechos e memórias para responder, pela integração existente. Não são enviados diretamente ao buscador.
 
+Para o Obsidian, o modelo também recebe um catálogo limitado a aproximadamente 8.000 caracteres de IDs/títulos/caminhos. A seleção prioriza títulos pertinentes e recência; bibliotecas grandes podem não caber inteiras. Nomes longos são abreviados e o modelo é informado da cobertura. O catálogo vai ao provedor de IA configurado, como os trechos e memórias; não vai ao buscador. Um título não comprova conteúdo ou progresso.
+
+Quando os trechos por palavras não bastam, a IA pode chamar `read_notes` escolhendo até três IDs existentes do catálogo. O servidor consulta somente as cópias atuais dessas notas: até cinco trechos de 1.100 caracteres, nunca arquivos arbitrários, anexos ou URLs. Se a consulta não tiver correspondência, retorna o primeiro trecho real de cada nota escolhida. A resposta identifica as notas com `[N1]` etc. Só há uma leitura adicional por resposta; a segunda inferência não oferece ferramentas, consome as cotas de IA e mantém o cancelamento e a validação da geração pessoal. Uma pergunta simples com trechos suficientes continua usando uma chamada.
+
+Uma ausência de correspondência por palavras não bloqueia mais o modelo com uma resposta pronta. Ele pode escolher outra nota pelo título ou fazer uma pergunta específica. Essa seleção usa a interpretação do modelo, **sem índice vetorial, embeddings ou treinamento automático com seu cofre**. Pode deixar de localizar uma informação, especialmente em bibliotecas maiores que o catálogo ou notas longas. Para ler integralmente, abra a nota pelo painel.
+
 Consultas propostas pela IA precisam compartilhar um assunto público com a pergunta ou a última pesquisa registrada no contexto ativo. O filtro recusa termos privados do contexto/memórias/notas/projetos e da biblioteca Markdown ausentes desses assuntos, além de URLs, ferramentas desconhecidas e formatos inválidos. A separação combina instruções e filtros de palavras, sem classificação infalível. Não inclua credenciais ou dados sensíveis em pedidos de pesquisa.
 
 Editar/apagar memórias, alterar perfil, limpar a conversa, apagar notas, alterar projetos ou importar/atualizar/excluir Markdown invalida o contexto antigo e respostas pendentes. O histórico visível pode preservar pesquisas antigas sem alimentar continuações após o reinício. Uma inferência que já recebeu dados não pode ser desfeita no provedor.
 
 Não há novas variáveis ou migração SQL. Reutilize Groq/Ollama, senha e SQLite/Supabase existentes. Modelos sem suporte a ferramentas podem recusar perguntas livres nessa configuração; selecione um modelo compatível. Buscadores podem bloquear consultas. O comportamento real do modelo e o áudio/controle físico no celular/Xbox precisam de teste no serviço.
 
-`npm test` cobre consultas complementares, prioridade pessoal, continuidade pública, reinício, ferramentas Groq/Ollama, cancelamento e exclusão de notas durante resposta. Playwright cobre indicador, detalhes de consultas, histórico e layout desktop/celular. Provedores simulados não demonstram qualidade de inferência real: confira fontes, datas e comportamento na sua conta.
+`npm test` cobre consultas complementares, prioridade pessoal, continuidade pública/pessoal, correção de fonte, transformação de respostas, mudanças de assunto, reinício, leitura por IDs reais, limites de catálogo/cotas, ferramentas Groq/Ollama em stream, cancelamento e exclusão de notas durante resposta. Playwright cobre indicador, detalhes de consultas, histórico e layout desktop/celular. Provedores simulados não demonstram qualidade de inferência real: confira fontes, datas e comportamento na sua conta.
 
 A [biblioteca Obsidian](obsidian.md) recupera até cinco trechos de 1.100 caracteres, no máximo dois por nota. Pedidos explícitos sobre a biblioteca e continuações reconhecidas recebem prioridade pessoal sobre a opção web. Referências são geradas pelo backend a partir das notas reais; marcadores inexistentes são removidos da resposta final. Consultas públicas não recebem o corpus completo, mas o modelo pode receber trechos pertinentes como contexto.

@@ -13,6 +13,27 @@ export interface AssistantInput extends ChatRequest {
   knowledgeContext?: KnowledgeSource[];
   privateKnowledgeTerms?: string;
   knowledgeOnly?: boolean;
+  privateOnly?: boolean;
+  conversationSubject?: string;
+  knowledgeCatalog?: { id: string; title: string; path: string }[];
+  knowledgeCount?: number;
+  readKnowledge?: (plan: KnowledgePlan) => KnowledgeSource[];
+}
+export interface KnowledgePlan { noteIds: string[]; query: string }
+export const KNOWLEDGE_TOOL = { type: 'function', function: {
+  name: 'read_notes', description: 'Consulta trechos das cópias atuais de notas do Obsidian. Use quando os trechos fornecidos não bastarem, inclusive quando o título indica um assunto com palavras diferentes. Não pesquisa a web nem escreve arquivos.',
+  parameters: { type: 'object', additionalProperties: false, required: ['noteIds', 'query'], properties: {
+    noteIds: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string', description: 'ID exato de uma nota do catálogo atual.' } },
+    query: { type: 'string', maxLength: 300, description: 'Assunto a localizar dentro das notas escolhidas; vazio lê os primeiros trechos.' },
+  } },
+} };
+export function validatedKnowledgePlan(value: unknown, request: AssistantInput): KnowledgePlan | undefined {
+  if (!request.readKnowledge || !value || typeof value !== 'object' || Array.isArray(value)) return;
+  const plan = value as Partial<KnowledgePlan>;
+  if (Object.keys(value).some(key => !['noteIds', 'query'].includes(key)) || typeof plan.query !== 'string' || plan.query.length > 300
+    || !Array.isArray(plan.noteIds) || !plan.noteIds.length || plan.noteIds.length > 3
+    || plan.noteIds.some(id => typeof id !== 'string' || !request.knowledgeCatalog?.some(note => note.id === id))) return;
+  return { noteIds: [...new Set(plan.noteIds)], query: plan.query.trim() };
 }
 export interface SearchPlan { queries: string[]; news: boolean }
 export const SEARCH_TOOL = { type: 'function', function: {
@@ -25,7 +46,7 @@ export const SEARCH_TOOL = { type: 'function', function: {
 export const INTERPRETATION_PROMPT = `\nInterprete a intenção antes de responder. Para conversa, explicações estáveis e informações pessoais, responda normalmente usando o contexto e os dados pessoais disponíveis. Para notícias, informações atuais, links/fontes ou pedidos de pesquisa, solicite search_web; não responda por memória como se tivesse pesquisado. Você pode propor até três consultas complementares, curtas e específicas. Use somente assuntos públicos presentes no pedido atual ou no último assunto público de pesquisa fornecido, sem copiar memórias, notas, nomes ou dados privados para consultas. Reformule referências como "e sobre isso hoje?" usando esse assunto público. Se a referência for pessoal ou ambígua, responda ou peça esclarecimento, sem pesquisar. Não chame ferramentas para salvar, editar ou apagar dados. Nunca produza URLs como ferramentas. O servidor valida e executa a pesquisa; não afirme que já foi realizada antes de receber resultados.`;
 const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 export function personalQuestion(text: string) {
-  return knowledgeQuestion(text) || /\b(?:meu (?:nome|cpf|endereco|telefone)|minha (?:senha|conta)|(?:meus?|minhas?) (?:memorias?|notas?|anotacoes?|preferencias?|projetos?|tarefas?|pendencias?)|o que (?:eu )?(?:anotei|salvei)|sobre mim|voce lembra de mim)\b/.test(normalize(text));
+  return knowledgeQuestion(text) || /\b(?:meu (?:nome|cpf|endereco|telefone)|minha (?:senha|conta)|(?:meus?|minhas?) (?:memorias?|notas?|anotacoes?|preferencias?|projetos?|tarefas?|pendencias?|prioridades?|objetivos?|planos?|estudos?|rotina)|o que (?:eu )?(?:anotei|salvei)|sobre mim|voce lembra de mim)\b/.test(normalize(text));
 }
 export const PROJECT_TOOL = { type: 'function', function: {
   name: 'propose_project_change', description: 'Propõe criar um projeto com etapas, adicionar tarefas ou concluir uma tarefa existente. Nada é salvo antes de o dono revisar e confirmar na interface. Use para pedidos de planos pessoais e projetos/tarefas. Não pesquisa na internet.',
@@ -68,7 +89,7 @@ export function validatedPlan(value: unknown, request: AssistantInput): SearchPl
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const plan = value as Partial<SearchPlan>;
   if (Object.keys(value).some(key => !['queries', 'news'].includes(key)) || typeof plan.news !== 'boolean'
-    || !Array.isArray(plan.queries) || !plan.queries.length || plan.queries.length > 3 || personalQuestion(request.message) || request.knowledgeOnly) return;
+    || !Array.isArray(plan.queries) || !plan.queries.length || plan.queries.length > 3 || personalQuestion(request.message) || request.knowledgeOnly || request.privateOnly) return;
   const allowed = new Set(words(request.message + ' ' + (request.searchContext?.query ?? '') + ' ' + (request.publicSearchTerms ?? '')).filter(word => !neutral.has(word)));
   const privateWords = new Set(words([...(request.personalMemory ?? []), ...(request.personalNotes ?? []), ...(request.context ?? []).map(turn => turn.content), request.privateProjectTerms ?? '', request.privateKnowledgeTerms ?? ''].join(' ')).filter(word => !neutral.has(word)));
   const queries: string[] = [];

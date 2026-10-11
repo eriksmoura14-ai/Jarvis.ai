@@ -23,8 +23,9 @@ import { selectedNotes, selectedProjects, validatedProjectChange } from './inter
 import { ProjectProposals, registerProjectRoutes, projectCommand } from './personal/projects.js';
 import { registerObsidianRoutes } from './personal/obsidian.js';
 import { registerKnowledgeRoutes } from './personal/knowledge.js';
-import { retrieveKnowledge, knowledgeReply, knowledgeFollowupSubject } from './personal/knowledge-index.js';
-import { knowledgeQuestion } from '../shared/knowledge.js';
+import { retrieveKnowledge, knowledgeReply, knowledgeCatalog, readKnowledge } from './personal/knowledge-index.js';
+import { resolveConversation } from './conversation.js';
+import type { AssistantInput } from './interpretation.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -196,14 +197,15 @@ export async function buildApp(options: AppOptions = {}) {
       const record = personal ? await personal.snapshotRecord() : undefined;
       controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
-      const previousQuestion = knowledgeFollowupSubject(record?.context ?? [], request.body.message);
-      const knowledgeFollowup = !!previousQuestion;
-      const knowledgeQuery = request.body.message + (knowledgeFollowup ? ' ' + previousQuestion : '');
-      const knowledgeContext = record ? retrieveKnowledge(record.knowledge, knowledgeQuery) : [];
-      const body = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
-        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, request.body.message),
-        projectData: selectedProjects(record.snapshot.projects ?? [], request.body.message), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
-        knowledgeContext, privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: knowledgeQuestion(request.body.message) || knowledgeFollowup } : request.body;
+      const resolution = resolveConversation(record?.context ?? request.body.context ?? [], request.body.message, record?.lastAnswerFromKnowledge);
+      let knowledgeContext = record ? retrieveKnowledge(record.knowledge, resolution.query) : [];
+      const body: AssistantInput = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
+        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, resolution.query),
+        projectData: selectedProjects(record.snapshot.projects ?? [], resolution.query), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
+        knowledgeContext, knowledgeCatalog: knowledgeCatalog(record.knowledge, resolution.query), knowledgeCount: record.knowledge.length,
+        readKnowledge: plan => { controller.signal.throwIfAborted(); knowledgeContext = readKnowledge(record.knowledge, plan); return knowledgeContext; },
+        privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: resolution.knowledgeOnly, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject }
+        : { ...request.body, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject };
       const prepared = performance.now();
       let lastEmit = -Infinity;
       const progress = emit ? (text: string) => {
@@ -212,8 +214,11 @@ export async function buildApp(options: AppOptions = {}) {
         // Snapshots allow research fallback to replace a failed partial summary.
         if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: text.slice(0, 6000) }); }
       } : undefined;
-      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot) : undefined)
-        ?? (record ? knowledgeReply(knowledgeQuery, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined) ?? await assistant.respond(body, controller.signal, progress);
+      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot, provider.name !== 'local') : undefined)
+        ?? (resolution.clarification ? { message: resolution.clarification, command: 'conversation' as const, provider: 'local' as const } : undefined)
+        ?? (record ? knowledgeReply(request.body.message, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
+        ?? (record && resolution.knowledgeOnly ? knowledgeReply(resolution.query, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
+        ?? await assistant.respond(body, controller.signal, progress);
       const { proposal: _proposal, knowledgeSources: _knowledgeSources, ...safe } = raw;
       const change = 'projectChange' in raw ? validatedProjectChange(raw.projectChange, body) : undefined;
       if ('projectChange' in safe) delete safe.projectChange;

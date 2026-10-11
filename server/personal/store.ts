@@ -100,7 +100,8 @@ export class PersonalStore implements NoteRepository {
     const searchContext = lastSearch?.webSearch;
     const publicSearchTerms = (lastSearch?.sources ?? []).map(source => source.title + ' ' + source.snippet).join(' ').slice(0, 4500);
     const knowledge = value.knowledge ?? [];
-    return { version, knowledge, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name, projects: value.projects ?? [], projectsRevision: value.projectsRevision ?? 0, library: knowledge.map(({ content: _content, ...summary }) => summary), libraryRevision: value.libraryRevision ?? 0 } };
+    const lastAnswerFromKnowledge = !![...activeHistory].reverse().find(message => message.role === 'assistant')?.knowledgeSources?.length;
+    return { version, knowledge, lastAnswerFromKnowledge, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name, projects: value.projects ?? [], projectsRevision: value.projectsRevision ?? 0, library: knowledge.map(({ content: _content, ...summary }) => summary), libraryRevision: value.libraryRevision ?? 0 } };
   }
   async snapshot(): Promise<PersonalSnapshot> { return (await this.snapshotRecord()).snapshot; }
   async importKnowledge(files: MarkdownFile[], revision: number, replace: boolean) {
@@ -303,7 +304,8 @@ export class PersonalStore implements NoteRepository {
       if (generation !== value.generation) return false;
       // Keep the model's context separate so visible old conversations cannot undo forgetting.
       value.contextHistory = [...(value.contextHistory ?? value.history), ...messages].slice(-MAX_CONTEXT_MESSAGES)
-        .map(({ id, role, content, createdAt, webSearch, sources }) => ({ id, role, content: content.slice(0, MAX_MESSAGE_LENGTH), createdAt, ...(webSearch ? { webSearch, sources } : {}) }));
+        .map(({ id, role, content, createdAt, webSearch, sources, knowledgeSources }) => ({ id, role, content: content.slice(0, MAX_MESSAGE_LENGTH), createdAt,
+          ...(webSearch ? { webSearch, sources } : {}), ...(knowledgeSources?.length ? { knowledgeSources } : {}) }));
       value.history = boundedHistory([...value.history, ...messages]);
       return true;
     });

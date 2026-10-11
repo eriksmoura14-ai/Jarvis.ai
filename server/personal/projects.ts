@@ -34,9 +34,13 @@ export function registerProjectRoutes(app: FastifyInstance, store: PersonalStore
     return store.applyProjectChange(proposal.change, proposal.projectsRevision, { id: proposal.id, generation: proposal.generation });
   });
 }
-export function projectCommand(request: ChatRequest, snapshot: PersonalSnapshot): Omit<ChatResponse, 'id' | 'createdAt'> | undefined {
+export function projectCommand(request: ChatRequest, snapshot: PersonalSnapshot, modelAvailable = false): Omit<ChatResponse, 'id' | 'createdAt'> | undefined {
   const text = request.message.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/^jarvis[,.:!]?\s+/, '').replace(/[.!?]+$/, '');
   const projects = snapshot.projects ?? [];
+  // Priorities can live in the vault or profile, beyond registered tasks.
+  // Keep explicit task listings deterministic; let a connected model interpret
+  // a broader priorities question using all available personal context.
+  if (modelAvailable && /^quais (?:sao )?(?:as )?minhas prioridades(?: hoje)?$/.test(text)) return;
   if (/^(?:projetos|meus projetos|listar projetos)$/.test(text)) return { provider: 'local', command: 'conversation', message: projects.length
     ? 'Seus projetos:\n' + projects.map(project => `• ${project.title}: ${project.tasks.filter(task => task.status === 'done').length}/${project.tasks.length} tarefas concluídas${project.archived ? ' (arquivado)' : ''}.`).join('\n')
     : 'Você ainda não tem projetos. Abra “Projetos e tarefas” para criar um ou peça “crie um projeto para estudar inglês”.' };

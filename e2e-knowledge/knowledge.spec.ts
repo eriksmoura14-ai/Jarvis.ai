@@ -70,3 +70,24 @@ test('chat consulta notas reais mesmo com web marcada, preserva referências e r
   expect(data.library.some((note: { path: string }) => note.path === 'React.md')).toBe(false);
   expect(data.history.at(-1).knowledgeSources).toEqual([]);
 });
+test('esclarece a fonte, entende o tema respondido e mantém a continuação nas notas', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat')); await enter(page);
+  await page.request.delete('/api/personal/history', { headers: client });
+  const initial = await (await page.request.get('/api/personal/data')).json();
+  const imported = await page.request.post('/api/personal/knowledge/import', { headers: client, data: {
+    files: [{ path: 'Interpretacao.md', content: '# React contextual\nComponentes compõem interfaces.' }], replace: false, libraryRevision: initial.libraryRevision,
+  } });
+  expect(imported.ok()).toBe(true); await page.reload();
+  await page.getByLabel('Pesquisar na web').check();
+  const send = async (message: string) => {
+    await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill(message);
+    await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  };
+  await send('no Obsidian'); await expect(page.getByRole('log')).toContainText('Qual assunto ou nota');
+  await send('React'); await expect(page.getByRole('region', { name: 'Notas consultadas' })).toHaveCount(1);
+  await send('Explique melhor'); await expect(page.getByRole('region', { name: 'Notas consultadas' })).toHaveCount(2);
+  const messages = page.getByRole('log'); await expect(messages).toContainText('Componentes compõem interfaces');
+  await expect(messages).not.toContainText('Não encontrei trechos');
+  const current = await (await page.request.get('/api/personal/data')).json();
+  expect(current.history.at(-1).knowledgeSources[0].path).toBe('Interpretacao.md'); expect(current.history.at(-1).webSearch).toBeUndefined();
+});
