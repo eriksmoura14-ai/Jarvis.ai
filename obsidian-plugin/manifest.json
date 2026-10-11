@@ -1,0 +1,9 @@
+{
+  "id": "jarvis-obsidian",
+  "name": "JARVIS — Cofre pessoal",
+  "version": "0.1.0",
+  "minAppVersion": "1.7.0",
+  "description": "Sincroniza notas Markdown selecionadas com seu JARVIS pessoal, com proteção contra conflitos e backups locais.",
+  "author": "Erik Moura",
+  "isDesktopOnly": false
+}

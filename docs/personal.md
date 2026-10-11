@@ -74,7 +74,7 @@ conexão incompleta nem troca automaticamente para armazenamento temporário.
   progresso na conta. O modelo pode propor mudanças para revisão, sem salvar
   automaticamente. Veja [uso, confirmação e limites](projects.md). Não há novo
   SQL ou variável para ativar o painel em uma conta pessoal já configurada.
-- **Notas do Obsidian** importa cópias `.md` após revisão, com busca de trechos, referências e atualização autorizada. A biblioteca acompanha a conta, sem novo SQL ou variável; [uso e limites](obsidian.md).
+- **Notas do Obsidian** conecta um cofre pelo plugin Android/desktop ou importa cópias `.md` após revisão, com busca de trechos, referências, editor e atualização autorizada. A biblioteca acompanha a conta, sem novo SQL ou variável; [uso e limites](obsidian.md).
 - As últimas 100 mensagens ficam na conta. A interface atualiza ao voltar para a
   aba e a cada 10 segundos enquanto está visível. A IA recebe o contexto recente
   armazenado no servidor, permitindo continuar uma conversa em outro aparelho.
@@ -199,4 +199,4 @@ direcional/A/B no login e nas listas, armazenamento do cookie, redimensionamento
 permissão do microfone, reconhecimento e síntese. Os testes mobile de Chromium
 não validam o hardware Xbox nem as vozes reais de cada celular.
 
-A biblioteca Markdown permite até 100 cópias/1 MB no documento privado existente. Importar, atualizar ou excluir uma cópia reinicia o contexto ativo e invalida respostas pendentes. Excluir remove referências estruturadas da nota no histórico; texto citado em respostas antigas permanece até limpar a conversa. Os originais no Obsidian não são alterados.
+A biblioteca Markdown permite até 100 cópias/1 MB no documento privado existente. Importar, atualizar ou excluir uma cópia reinicia o contexto ativo e invalida respostas pendentes. Excluir remove referências estruturadas da nota no histórico; texto citado em respostas antigas permanece até limpar a conversa. Importação manual e remoção preservam os originais. Edições web só voltam ao cofre quando o plugin está ativo e a opção de receber alterações foi habilitada; ele salva backup antes de substituir. Chaves revogáveis com escopo de biblioteca ficam no documento de sessões existente, sem nova migração SQL.

@@ -6,6 +6,7 @@ import { memorySlot, personalProfile, sameMemory } from '../../shared/memory.js'
 import { MAX_PROJECTS, MAX_TASKS, validChange, type PersonalProject, type ProjectChange } from '../../shared/projects.js';
 import { MAX_KNOWLEDGE_NOTES, MAX_LIBRARY_BYTES, validMarkdownFiles, byteLength, pathKey, type KnowledgeNote, type MarkdownFile } from '../../shared/knowledge.js';
 import { markdownTitle } from './knowledge-index.js';
+import { normalizeMarkdown, validSyncRequest, type SyncRequest, type SyncResponse, type ObsidianDevice } from '../../shared/obsidian.js';
 
 export class PersonalError extends Error {
   constructor(message: string, readonly statusCode = 503) { super(message); }
@@ -17,6 +18,7 @@ interface Document {
   contextHistory?: Message[];
   projects?: PersonalProject[]; projectsRevision?: number; appliedProjectProposals?: string[];
   knowledge?: KnowledgeNote[]; libraryRevision?: number;
+  obsidianDevices?: (ObsidianDevice & { hash: string; version: string })[];
 }
 const empty = (): Document => ({ history: [], memories: [], notes: [], generation: 0, usage: { day: '', count: 0 }, sessions: [] });
 function boundedHistory(messages: Message[]): Message[] {
@@ -121,6 +123,69 @@ export class PersonalStore implements NoteRepository {
       return { ok: true, added, updated, unchanged };
     });
   }
+  async editKnowledge(id: string, content: string, revision: number) {
+    return this.change(value => {
+      const notes = value.knowledge ?? []; const note = notes.find(note => note.id === id);
+      if (!note) throw new PersonalError('Esta nota foi removida.', 404);
+      if (note.revision !== revision) throw new PersonalError('Esta nota mudou em outro aparelho. Seu rascunho foi preservado; compare com a versão atual antes de salvar.', 409);
+      if (!validMarkdownFiles([{ path: note.path, content }])) throw new PersonalError('Use texto Markdown UTF-8 não vazio, até 50 KB.', 400);
+      const normalized = normalizeMarkdown(content);
+      if (normalized === note.content) return { ok: true };
+      if (notes.reduce((sum, item) => sum + item.bytes, 0) - note.bytes + byteLength(normalized) > MAX_LIBRARY_BYTES) throw new PersonalError('A biblioteca atingiu o limite de 1 MB.', 409);
+      Object.assign(note, { content: normalized, bytes: byteLength(normalized), title: markdownTitle({ path: note.path, content: normalized }), revision: note.revision + 1, updatedAt: new Date().toISOString() });
+      value.libraryRevision = (value.libraryRevision ?? 0) + 1; this.resetContext(value); return { ok: true };
+    });
+  }
+  async syncKnowledge(input: SyncRequest): Promise<SyncResponse> {
+    if (!validSyncRequest(input)) throw new PersonalError('Lote de sincronização inválido: até 20 notas/250 KB e 100 caminhos conhecidos.', 400);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const row = await this.backend.read(); const value = row.value; const notes = value.knowledge ?? [];
+      const result: SyncResponse = { acknowledged: [], updates: [], conflicts: [], libraryRevision: value.libraryRevision ?? 0 };
+      let changed = false;
+      for (const file of input.changes) {
+        const existing = notes.find(note => pathKey(note.path) === pathKey(file.path));
+        const content = normalizeMarkdown(file.content); const hash = sessionHash(content);
+        const remoteHash = existing ? sessionHash(existing.content) : null;
+        if (hash === remoteHash) { result.acknowledged.push({ path: file.path, hash }); continue; }
+        if (file.baseHash !== remoteHash) {
+          result.conflicts.push({ path: file.path, reason: existing ? 'changed' : 'removed', ...(existing ? { remote: { path: file.path, content: existing.content, hash: remoteHash! } } : {}) }); continue;
+        }
+        if ((!existing && notes.length >= MAX_KNOWLEDGE_NOTES) || notes.reduce((sum, note) => sum + note.bytes, 0) - (existing?.bytes ?? 0) + byteLength(content) > MAX_LIBRARY_BYTES) {
+          result.conflicts.push({ path: file.path, reason: 'limit' }); continue;
+        }
+        const note: KnowledgeNote = { id: existing?.id ?? randomUUID(), path: existing?.path ?? file.path.normalize('NFC'), content, title: markdownTitle({ path: file.path, content }), bytes: byteLength(content), revision: (existing?.revision ?? 0) + 1, updatedAt: new Date().toISOString() };
+        if (existing) notes[notes.indexOf(existing)] = note; else notes.push(note);
+        changed = true; result.acknowledged.push({ path: file.path, hash });
+      }
+      const incoming = new Set(input.changes.map(file => pathKey(file.path)));
+      for (const known of input.known) {
+        if (incoming.has(pathKey(known.path))) continue;
+        const note = notes.find(note => pathKey(note.path) === pathKey(known.path));
+        // Never propagate deletions into the phone.
+        if (note && sessionHash(note.content) !== known.hash && result.updates.length < 20) result.updates.push({ path: known.path, content: note.content, hash: sessionHash(note.content) });
+      }
+      if (!changed) return result; // Idle polls do not rewrite the Supabase document.
+      value.knowledge = notes; value.libraryRevision = result.libraryRevision + 1; result.libraryRevision = value.libraryRevision; this.resetContext(value);
+      if (await this.backend.write(value, row.version)) return result;
+    }
+    throw new PersonalError('Outro aparelho atualizou a biblioteca. Sincronize novamente.', 409);
+  }
+  async createObsidianDevice(name: string, hash: string, version: string) {
+    return this.change(value => {
+      const devices = (value.obsidianDevices ?? []).filter(device => device.expires > Date.now() && device.version === version);
+      if (devices.length >= 5) throw new PersonalError('Revogue uma chave antiga antes de adicionar outro aparelho. Limite: 5.', 409);
+      const device = { id: randomUUID(), name, hash, version, createdAt: new Date().toISOString(), expires: Date.now() + 180 * 24 * 60 * 60 * 1000 };
+      devices.push(device); value.obsidianDevices = devices;
+      const { hash: _hash, version: _version, ...summary } = device; return summary;
+    }, 'sessions');
+  }
+  async listObsidianDevices(version: string) {
+    return ((await this.backend.read('sessions')).value.obsidianDevices ?? []).filter(device => device.version === version && device.expires > Date.now()).map(({ hash: _hash, version: _version, ...summary }) => summary);
+  }
+  async validObsidianDevice(hash: string, version: string) {
+    return ((await this.backend.read('sessions')).value.obsidianDevices ?? []).some(device => device.hash === hash && device.version === version && device.expires > Date.now());
+  }
+  async revokeObsidianDevice(id: string) { return this.change(value => { value.obsidianDevices = (value.obsidianDevices ?? []).filter(device => device.id !== id); return { ok: true }; }, 'sessions'); }
   async deleteKnowledge(id: string, revision: number) {
     return this.change(value => {
       if ((value.libraryRevision ?? 0) !== revision) throw new PersonalError('A biblioteca mudou. Confira as notas antes de remover a cópia.', 409);

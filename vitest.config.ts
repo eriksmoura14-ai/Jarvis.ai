@@ -1,2 +1,2 @@
 import { defineConfig } from 'vitest/config';
-export default defineConfig({ test: { include: ['server/**/*.test.ts', 'src/**/*.test.ts', 'shared/**/*.test.ts'] } });
+export default defineConfig({ test: { include: ['server/**/*.test.ts', 'src/**/*.test.ts', 'shared/**/*.test.ts', 'obsidian-plugin/**/*.test.ts'] } });

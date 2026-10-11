@@ -16,6 +16,9 @@ export function registerKnowledgeRoutes(app: FastifyInstance, store: PersonalSto
     if (!note) throw new PersonalError('Esta cópia da nota foi removida. Consulte a biblioteca atual.', 404);
     return note;
   });
+  app.put<{ Params: { id: string }; Body: { content: string; revision: number } }>('/api/personal/knowledge/:id', {
+    bodyLimit: 350_000, schema: { body: { type: 'object', additionalProperties: false, required: ['content', 'revision'], properties: { content: { type: 'string', maxLength: 50_000 }, revision: { type: 'integer', minimum: 1 } } } },
+  }, request => store.editKnowledge(request.params.id, request.body.content, request.body.revision));
   app.delete<{ Params: { id: string }; Body: { libraryRevision: number } }>('/api/personal/knowledge/:id', {
     schema: { body: { type: 'object', additionalProperties: false, required: ['libraryRevision'], properties: { libraryRevision: { type: 'integer', minimum: 0 } } } },
   }, request => store.deleteKnowledge(request.params.id, request.body.libraryRevision));

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { PersonalSnapshot } from '../../shared/contracts';
 import { MAX_IMPORT_FILES, MAX_IMPORT_BYTES, MAX_NOTE_BYTES, pathKey, validMarkdownFiles, validKnowledgeSummary, validKnowledgeSources, type KnowledgeNote, type KnowledgeSource, type MarkdownFile } from '../../shared/knowledge';
+import { ObsidianConnection } from './ObsidianConnection';
 import { personalRequest } from '../lib/personal';
 
 export function KnowledgeSources({ sources, onOpen }: { sources?: KnowledgeSource[]; onOpen: (id: string, revision: number) => void }) {
   if (!sources?.length) return null;
   return <section className="knowledge-sources" aria-label="Notas consultadas">
     <p>Notas consultadas · Obsidian</p>
-    <small>Trechos recuperados das cópias importadas. Confira como sustentam a resposta.</small>
+    <small>Trechos recuperados da biblioteca pessoal. Confira como sustentam a resposta.</small>
     {sources.map(source => <details key={source.reference}><summary data-gamepad>[{source.reference}] {source.title}{source.heading && source.heading !== source.title ? ` · ${source.heading}` : ''}</summary>
       <small>{source.path}</small><p className="knowledge-excerpt">{source.excerpt}</p>
       <button data-gamepad className="secondary-button" onClick={() => onOpen(source.id, source.revision)}>Abrir nota: {source.title}</button>
@@ -21,6 +22,7 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
   const [notice, setNotice] = useState(''); const [error, setError] = useState('');
   const [query, setQuery] = useState(''); const [resultQuery, setResultQuery] = useState(''); const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [selected, setSelected] = useState(initialNote); const [note, setNote] = useState<KnowledgeNote>(); const [loading, setLoading] = useState(false);
+  const [draft, setDraft] = useState<{ id: string; revision: number; content: string; path: string }>();
   const [removing, setRemoving] = useState<string>();
   const selection = useRef(0); const folder = useRef<HTMLInputElement>(null);
   const searchController = useRef<AbortController | undefined>(undefined);
@@ -31,7 +33,7 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
   }, [revision]);
   useEffect(() => {
     setNote(undefined); setLoading(false); if (!selected) return;
-    const controller = new AbortController(); setLoading(true); setError('');
+    const controller = new AbortController(); setLoading(true); if (!draft) setError('');
     void personalRequest<KnowledgeNote>(`knowledge/${encodeURIComponent(selected.id)}`, 'GET', undefined, controller.signal).then(value => {
       if (!validKnowledgeSummary(value) || typeof value.content !== 'string') throw new Error('O servidor retornou uma nota inválida.');
       if (!controller.signal.aborted) setNote(value);
@@ -80,15 +82,22 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
   };
   const remove = async (id: string) => {
     if (busy) return; setBusy(true); setError(''); setNotice('');
-    try { await personalRequest(`knowledge/${encodeURIComponent(id)}`, 'DELETE', { libraryRevision: revision }); setSelected(undefined); setRemoving(undefined); setNotice('Cópia removida da conta. O arquivo original do Obsidian foi preservado.');
+    try { await personalRequest(`knowledge/${encodeURIComponent(id)}`, 'DELETE', { libraryRevision: revision }); setSelected(undefined); if (draft?.id === id) setDraft(undefined); setRemoving(undefined); setNotice('Cópia removida da conta. O arquivo original do Obsidian foi preservado.');
       await onRefresh().catch(() => setError('A cópia foi removida. Recarregue para atualizar a biblioteca.'));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível remover.'); await onRefresh().catch(() => {}); }
+    finally { setBusy(false); }
+  };
+  const saveDraft = async () => {
+    if (!draft || busy) return; setBusy(true); setError(''); setNotice('');
+    try { await personalRequest(`knowledge/${encodeURIComponent(draft.id)}`, 'PUT', { content: draft.content, revision: draft.revision }); setDraft(undefined); setNotice('Nota salva na conta JARVIS. O plugin só grava no cofre quando estiver ativo e com permissão para receber alterações.'); await onRefresh(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível salvar.'); await onRefresh().catch(() => {}); }
     finally { setBusy(false); }
   };
   const existing = files.filter(file => library.some(note => pathKey(note.path) === pathKey(file.path)));
   const disabled = busy || reading;
   return <div className="knowledge-panel">
-    <p className="modal-description">Importe notas Markdown do Obsidian para consultar pelo chat ou por voz. Revise os arquivos antes de salvar. As cópias acompanham sua conta no celular e computador; os originais continuam no Obsidian.</p>
+    <p className="modal-description">Conecte o cofre pelo plugin do Obsidian ou importe cópias manualmente. Consulte suas notas pelo chat e edite pelo celular, computador ou Xbox. Revise antes de salvar.</p>
+    <ObsidianConnection />
     <div className="knowledge-import">
       <label htmlFor="knowledge-files">Selecionar notas Markdown</label><input data-gamepad id="knowledge-files" type="file" accept=".md,text/markdown" multiple disabled={disabled} onChange={event => void pick(event)} />
       <label htmlFor="knowledge-folder">Selecionar pasta de notas (quando o navegador permitir)</label><input data-gamepad ref={folder} id="knowledge-folder" type="file" multiple disabled={disabled} onChange={event => void pick(event)} />
@@ -109,8 +118,9 @@ export function Knowledge({ snapshot, onRefresh, initialNote }: { snapshot: Pers
       {removing === note.id && <div role="group" aria-label={`Confirmar remoção de ${note.title}`}><p>Remover esta cópia da conta? O original do Obsidian permanece no seu aparelho. Respostas antigas podem conter texto desta nota.</p><button data-gamepad className="secondary-button" disabled={disabled} onClick={() => setRemoving(undefined)}>Cancelar remoção</button><button data-gamepad className="primary-button" disabled={disabled} onClick={() => void remove(note.id)}>Confirmar remoção da cópia</button></div>}
     </li>)}</ul>
     {loading && <p role="status">Abrindo nota…</p>}
-    {note && <article className="knowledge-note" aria-label={`Nota ${note.title}`}><h3>{note.title}</h3><small>{note.path}</small>{note.revision !== selected?.revision && <p role="status">Esta nota foi atualizada desde a consulta. Abaixo está a cópia atual.</p>}<pre className="knowledge-markdown">{note.content}</pre></article>}
-    <p className="privacy-note">Importação manual de cópias. Para trazer alterações do Obsidian, importe novamente e revise a atualização. Links e anexos não são baixados. Não há sincronização automática com seu cofre nem escrita de notas pelo JARVIS.</p>
+    {note && <article className="knowledge-note" aria-label={`Nota ${note.title}`}><h3>{note.title}</h3><small>{note.path}</small>{note.revision !== selected?.revision && <p role="status">Esta nota foi atualizada desde a consulta. Abaixo está a cópia atual.</p>}<pre className="knowledge-markdown">{note.content}</pre>{!draft && <button data-gamepad className="secondary-button" disabled={disabled} onClick={() => setDraft({ id: note.id, revision: note.revision, content: note.content, path: note.path })}>Editar nota</button>}</article>}
+    {draft && <section aria-label="Editar nota Markdown"><h3>Editar nota · {draft.path}</h3><p>Seu rascunho permanece aqui se a nota mudar em outro aparelho. Compare com a versão atual e descarte o rascunho para reiniciar a edição se houver conflito.</p><label htmlFor="knowledge-edit">Texto Markdown</label><textarea data-gamepad id="knowledge-edit" rows={12} value={draft.content} disabled={disabled} onChange={event => setDraft({ ...draft, content: event.target.value })} /><div className="memory-actions"><button data-gamepad className="primary-button" disabled={disabled || !draft.content.trim()} onClick={() => void saveDraft()}>Salvar nota</button><button data-gamepad className="secondary-button" disabled={disabled} onClick={() => setDraft(undefined)}>Descartar rascunho</button></div></section>}
+    <p className="privacy-note">A conexão automática requer o plugin instalado e vinculado no Obsidian. Para cópias importadas manualmente, importe novamente para atualizar. Links e anexos não são baixados; o assistente não escreve notas por conta própria.</p>
     {notice && <p role="status">{notice}</p>}{error && <p role="alert" className="personal-error">{error}</p>}
   </div>;
 }

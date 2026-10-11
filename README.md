@@ -14,7 +14,7 @@ Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitH
 
 **Projetos e tarefas:** [objetivos, etapas, prazos, progresso e propostas do chat para revisar](docs/projects.md). No modo pessoal, os dados acompanham sua conta no celular e computador. O painel funciona sem IA; planos propostos pela IA só são aplicados após **Confirmar proposta**. Reutiliza o Supabase existente, sem nova chave ou SQL.
 
-**Obsidian:** [importar notas Markdown e conversar com referências reais](docs/obsidian.md). Revise os arquivos antes de salvar; as cópias acompanham a conta pessoal nos aparelhos. Importação manual, sem editar o cofre original, instalar plugins ou configurar novas chaves.
+**Obsidian:** [conectar o cofre Android e editar pelo navegador/Xbox](docs/obsidian.md). Plugin próprio instalável, vínculo com chave revogável, sincronização de Markdown, revisão de conflitos e backups antes de gravar no cofre. A instalação e ativação no aparelho são manuais; importação de cópias continua disponível.
 
 **Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O modelo pode solicitar pesquisa pública ou propor mudanças em projetos pessoais para confirmação. O aplicativo não controla o sistema operacional.
 
@@ -37,10 +37,10 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm run dev` | Frontend e backend com recarga |
 | `npm run dev:web` | Somente Vite |
 | `npm run dev:server` | Somente Fastify, reiniciando ao editar |
-| `npm run typecheck` | Verificação TypeScript de ambos |
+| `npm run typecheck` | Verificação TypeScript de frontend, backend e plugin |
 | `npm test` | Testes unitários e de integração (Vitest) |
 | `npm run test:watch` | Testes em modo contínuo |
-| `npm run build` | Typecheck, build frontend e compilação backend |
+| `npm run build` | Typecheck, build frontend/backend e ZIP do plugin Obsidian |
 | `npm run build:pages` | Build estática funcional para GitHub Pages em `dist-pages/` |
 | `npm run preview:pages` | Servir a build Pages para validação local |
 | `npm run test:pages` | Testes desktop/celular sem API para a build Pages |
@@ -48,6 +48,8 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm run test:e2e` | Testes de navegador em desktop e celular |
 | `npm run test:personal` | Login, memórias e sincronização com SQLite em desktop/celular |
 | `npm run test:projects` | Projetos, tarefas e revisão de propostas em desktop/celular |
+| `npm run build:obsidian` | Compilar plugin Obsidian Android/desktop e gerar ZIP |
+| `npm run test:obsidian` | Vínculo/revogação, editor e conflitos em desktop/celular |
 | `npm run test:knowledge` | Importação Markdown, consulta, referências e atualização em desktop/celular |
 | `npm run check` | Testes, build e testes de navegador |
 
@@ -93,7 +95,7 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
 - Modo opcional para um único dono: login por senha, sessões revogáveis, memória salva por pedido explícito, exclusão individual, histórico/notas sincronizados e importação consentida de mensagens antigas. SQLite local ou Supabase para persistir no Render; [configuração](docs/personal.md).
-- Biblioteca pessoal de Markdown do Obsidian: seleção e revisão, importação, atualização autorizada, busca de trechos, leitura segura e exclusão de cópias. Referências `[N1]` abrem a nota consultada; sem IA, mostra os trechos reais. Até 100 notas/1 MB, sem sincronização automática com o cofre.
+- Biblioteca pessoal de Markdown do Obsidian: seleção e revisão, importação, atualização autorizada, busca de trechos, leitura segura e exclusão de cópias. Referências `[N1]` abrem a nota consultada; sem IA, mostra os trechos reais. Até 100 notas/1 MB. Plugin Obsidian acompanha alterações enquanto ativo; devolve edições do navegador quando autorizado, com backup e proteção de conflitos.
 - Sem login configurado, histórico das últimas 100 mensagens em `localStorage`, restauração após recarga e limpeza com confirmação. Dados inválidos são ignorados; falhas de armazenamento são informadas.
 - Notas persistentes em SQLite no modo servidor ou `localStorage` no modo Pages, associadas à sessão do navegador. Limpar a conversa preserva as notas.
 - Modo de voz: reconhecimento via Web Speech API, ativado pelo usuário; ao terminar a fala, o comando é enviado e a resposta é lida automaticamente. Conversa contínua opcional volta a ouvir **depois** da resposta, com a escuta comum desligada durante a reprodução. A interrupção experimental “Jarvis, pare”, quando ativada, escuta somente esse comando durante a fala. Cada escuta tem limite de 60 segundos.
@@ -166,6 +168,9 @@ shared/context.ts         Seleção limitada do contexto recente
 shared/search.ts          Comandos de pesquisa e validação de fontes
 shared/projects.ts        Projetos, tarefas, validação e prioridades
 shared/knowledge.ts       Contratos e limites da biblioteca Markdown
+shared/obsidian.ts        Protocolo de sincronização e chaves de aparelho
+obsidian-plugin/         Plugin Obsidian Android/desktop com backups
+scripts/build-obsidian.mjs Build portátil do plugin e ZIP instalável
 server/personal/knowledge.ts       API protegida de importação/leitura/exclusão
 server/personal/knowledge-index.ts Busca lexical por seções e trechos
 supabase/personal.sql     Tabela privada com RLS para o dono
@@ -190,7 +195,7 @@ O histórico é salvo apenas no navegador (`jarvis.history.v1`). Cada mensagem �
 
 As **notas** ficam em `data/jarvis.sqlite`, incluindo os arquivos de WAL do SQLite, e pertencem ao UUID guardado em `jarvis.session.v1`. Copiar esse UUID possibilita acessar as notas da sessão: ele não substitui autenticação. Limpar os dados do site ou usar outro navegador cria outra sessão, sem recuperar as notas anteriores. Para removê-las antes de limpar o site, use `apagar notas`.
 
-Sem `JARVIS_PASSWORD`, não há autenticação nem sincronização entre dispositivos. Nenhum modo oferece criptografia adicional de ponta a ponta ou backup automático. Use como MVP em máquina/rede confiável; adicione autenticação e proteção de dados antes de expor a API em produção pública. Limites: 2.000 caracteres por mensagem, 100 notas por sessão, 100 mensagens locais e 60 requisições de chat por minuto/IP.
+Sem `JARVIS_PASSWORD`, não há autenticação nem sincronização entre dispositivos. Não há criptografia adicional de ponta a ponta nem backup geral automático do banco; o plugin Obsidian faz backups locais antes de substituir uma nota. Use como MVP em máquina/rede confiável; adicione autenticação e proteção de dados antes de expor a API em produção pública. Limites: 2.000 caracteres por mensagem, 100 notas por sessão, 100 mensagens locais e 60 requisições de chat por minuto/IP.
 
 ## Áudio nos navegadores
 
@@ -245,7 +250,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
 2. Ativar e validar o modo pessoal com Supabase no seu serviço; acrescentar backup/exportação e exclusão individual de notas.
 3. Ampliar projetos/tarefas com edição, exclusão e exportação; planejar lembretes e calendário com opt-in antes de integrações externas.
-4. Evoluir a biblioteca Obsidian com exportação/backup, recuperação por significado e propostas de novas notas para revisão; a integração atual importa cópias manualmente.
+4. Evoluir a biblioteca Obsidian com exportação/backup, recuperação por significado e propostas de novas notas para revisão; a conexão atual sincroniza Markdown por plugin e permite edição manual no navegador.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 
 JARVIS AI é um projeto independente de portfólio. Não possui afiliação com Marvel, Microsoft ou seus produtos.

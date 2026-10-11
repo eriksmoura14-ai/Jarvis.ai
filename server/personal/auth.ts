@@ -33,6 +33,16 @@ export class PersonalAuth {
     return match?.[1];
   }
   async authenticated(request: FastifyRequest) { const token = this.token(request); return token ? this.store.validSession(sessionHash(token), this.version) : false; }
+  async obsidianAuthenticated(request: FastifyRequest) {
+    const token = request.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
+    return token ? this.store.validObsidianDevice(sessionHash(token), this.version) : false;
+  }
+  async createObsidianDevice(name: string) {
+    const token = randomBytes(32).toString('hex');
+    const device = await this.store.createObsidianDevice(name.trim(), sessionHash(token), this.version);
+    return { device, token };
+  }
+  listObsidianDevices() { return this.store.listObsidianDevices(this.version); }
   async login(password: string, reply: FastifyReply) {
     const now = Date.now(); this.attempts = this.attempts.filter(time => now - time < 60_000);
     if (this.active >= 2 || this.attempts.length >= 10) throw new PersonalError('Muitas tentativas de acesso. Aguarde um minuto.', 429);

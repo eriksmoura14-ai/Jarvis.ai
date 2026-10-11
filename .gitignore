@@ -15,3 +15,6 @@ test-results-pages/
 test-results-personal/
 test-results-projects/
 test-results-knowledge/
+
+dist-obsidian/
+test-results-obsidian/

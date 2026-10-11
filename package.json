@@ -10,8 +10,8 @@
     "dev": "concurrently -k -n api,web -c blue,cyan \"npm:dev:server\" \"npm:dev:web\"",
     "dev:web": "vite --host 0.0.0.0",
     "dev:server": "node --use-env-proxy --env-file-if-exists=.env --import tsx --watch server/index.ts",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.obsidian.json --noEmit",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json && npm run build:obsidian",
     "build:pages": "npm run typecheck && vite build --mode pages",
     "preview:pages": "vite preview --mode pages --outDir dist-pages --host 127.0.0.1 --port 4173 --strictPort",
     "test:pages": "playwright test --config playwright.pages.config.ts",
@@ -22,7 +22,9 @@
     "check": "npm run test && npm run build && npm run test:e2e",
     "test:personal": "playwright test --config playwright.personal.config.ts --project desktop-chromium && playwright test --config playwright.personal.config.ts --project mobile-chromium",
     "test:projects": "playwright test --config playwright.projects.config.ts --project desktop-chromium && playwright test --config playwright.projects.config.ts --project mobile-chromium",
-    "test:knowledge": "playwright test --config playwright.knowledge.config.ts --project desktop-chromium && playwright test --config playwright.knowledge.config.ts --project mobile-chromium"
+    "test:knowledge": "playwright test --config playwright.knowledge.config.ts --project desktop-chromium && playwright test --config playwright.knowledge.config.ts --project mobile-chromium",
+    "build:obsidian": "node scripts/build-obsidian.mjs",
+    "test:obsidian": "playwright test --config playwright.obsidian.config.ts --project desktop-chromium && playwright test --config playwright.obsidian.config.ts --project mobile-chromium"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
@@ -41,6 +43,8 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.14.4",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.20.0",
     "typescript": "^5.9.3",

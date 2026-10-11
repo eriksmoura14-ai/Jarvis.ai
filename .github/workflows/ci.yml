@@ -26,3 +26,6 @@ jobs:
       - run: npm run test:knowledge
         env:
           E2E_PRODUCTION: '1'
+      - run: npm run test:obsidian
+        env:
+          E2E_PRODUCTION: '1'

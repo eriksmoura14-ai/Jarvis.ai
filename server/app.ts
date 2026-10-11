@@ -21,6 +21,7 @@ import { SpeechError, SpeechProvider, type SpeechConfig } from './speech.js';
 import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
 import { selectedNotes, selectedProjects, validatedProjectChange } from './interpretation.js';
 import { ProjectProposals, registerProjectRoutes, projectCommand } from './personal/projects.js';
+import { registerObsidianRoutes } from './personal/obsidian.js';
 import { registerKnowledgeRoutes } from './personal/knowledge.js';
 import { retrieveKnowledge, knowledgeReply, knowledgeFollowupSubject } from './personal/knowledge-index.js';
 import { knowledgeQuestion } from '../shared/knowledge.js';
@@ -66,6 +67,10 @@ export async function buildApp(options: AppOptions = {}) {
     }
     if (auth && !['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.headers['x-jarvis-client'] !== '1') return reply.code(403).send({ error: 'Pedido sem proteção de origem. Reabra o JARVIS.' });
     const path = request.url.split('?')[0];
+    if (path === '/api/obsidian/sync') {
+      if (!auth || !await auth.obsidianAuthenticated(request)) return reply.code(401).send({ error: 'Chave do Obsidian inválida, expirada ou revogada. Gere outra no JARVIS.' });
+      return;
+    }
     if (auth && !['/api/health', '/api/personal/session', '/api/personal/login'].includes(path) && !await auth.authenticated(request)) return reply.code(401).send({ error: 'Sua sessão expirou. Entre novamente.' });
   });
   app.options('/api/chat', async (_request, reply) => reply
@@ -82,7 +87,7 @@ export async function buildApp(options: AppOptions = {}) {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', streaming: true, webSearch: { enabled: true },
-      ...(personal ? { projects: { enabled: true }, knowledge: { enabled: true } } : {}),
+      ...(personal ? { projects: { enabled: true }, knowledge: { enabled: true }, obsidian: { enabled: true, protocol: 1 } } : {}),
       ...(provider instanceof HybridProvider ? { interpretation: { enabled: true } } : {}),
       ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
@@ -106,6 +111,7 @@ export async function buildApp(options: AppOptions = {}) {
   if (personal && auth) {
     registerProjectRoutes(app, personal, projectProposals);
     registerKnowledgeRoutes(app, personal);
+    registerObsidianRoutes(app, personal, auth);
     app.post<{ Body: { password: string } }>('/api/personal/login', {
       config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
       schema: { body: { type: 'object', additionalProperties: false, required: ['password'], properties: { password: { type: 'string', minLength: 1, maxLength: 200 } } } },
