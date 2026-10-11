@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check": "npm run test && npm run build && npm run test:e2e",
-    "test:personal": "playwright test --config playwright.personal.config.ts --project desktop-chromium && playwright test --config playwright.personal.config.ts --project mobile-chromium"
+    "test:personal": "playwright test --config playwright.personal.config.ts --project desktop-chromium && playwright test --config playwright.personal.config.ts --project mobile-chromium",
+    "test:projects": "playwright test --config playwright.projects.config.ts --project desktop-chromium && playwright test --config playwright.projects.config.ts --project mobile-chromium"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

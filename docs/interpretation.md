@@ -11,7 +11,7 @@ Teste pelo computador ou celular:
 - `E o que mudou nisso hoje?`: pode continuar o último tema público pesquisado no contexto ativo da conta. Sem assunto identificável, deve pedir esclarecimento.
 - `Oi Jarvis, pesquise para mim sobre a guerra na Ucrânia`: pesquisa explícita também sem IA, removendo a introdução falada e tentando alternativas quando nada foi encontrado.
 
-Não precisa marcar **Pesquisar na web** para perguntas livres com IA. Essa opção força a pesquisa de um assunto público; comandos de notas e perguntas pessoais reconhecidas têm prioridade. Conversa não salva fatos automaticamente. Use `anotar <texto>`, `lembre que <informação>` ou o painel de memória para alterações. O modelo só pode solicitar pesquisa pública, sem apagar dados ou controlar dispositivos.
+Não precisa marcar **Pesquisar na web** para perguntas livres com IA. Essa opção força a pesquisa de um assunto público; comandos de notas e perguntas pessoais reconhecidas têm prioridade. Conversa não salva fatos automaticamente. Use `anotar <texto>`, `lembre que <informação>` ou o painel de memória para alterações. No modo pessoal, o modelo também pode propor criar projetos, adicionar tarefas ou concluir uma tarefa atual, sempre com revisão e confirmação na tela. Veja [projetos e tarefas](projects.md). Não há ferramentas para apagar dados ou controlar dispositivos.
 
 ## Arquitetura
 
@@ -25,9 +25,9 @@ Groq SSE e Ollama NDJSON podem entregar argumentos da ferramenta em partes; esse
 
 O servidor autenticado recupera até cinco trechos de notas, com mil caracteres cada, ordenados por palavras pertinentes e recência. É uma seleção limitada por palavras, sem embeddings; prefira um assunto específico. `notas` continua listando notas localmente. O modelo recebe os trechos e memórias para responder, pela integração existente. Não são enviados diretamente ao buscador.
 
-Consultas propostas pela IA precisam compartilhar um assunto público com a pergunta ou a última pesquisa registrada no contexto ativo. O filtro recusa termos privados do contexto/memórias/notas ausentes desses assuntos, além de URLs, ferramentas desconhecidas e formatos inválidos. A separação combina instruções e filtros de palavras, sem classificação infalível. Não inclua credenciais ou dados sensíveis em pedidos de pesquisa.
+Consultas propostas pela IA precisam compartilhar um assunto público com a pergunta ou a última pesquisa registrada no contexto ativo. O filtro recusa termos privados do contexto/memórias/notas/projetos ausentes desses assuntos, além de URLs, ferramentas desconhecidas e formatos inválidos. A separação combina instruções e filtros de palavras, sem classificação infalível. Não inclua credenciais ou dados sensíveis em pedidos de pesquisa.
 
-Editar/apagar memórias, alterar perfil, limpar a conversa ou apagar notas invalida o contexto antigo e respostas pendentes. O histórico visível pode preservar pesquisas antigas sem alimentar continuações após o reinício. Uma inferência que já recebeu dados não pode ser desfeita no provedor.
+Editar/apagar memórias, alterar perfil, limpar a conversa, apagar notas ou alterar projetos invalida o contexto antigo e respostas pendentes. O histórico visível pode preservar pesquisas antigas sem alimentar continuações após o reinício. Uma inferência que já recebeu dados não pode ser desfeita no provedor.
 
 Não há novas variáveis ou migração SQL. Reutilize Groq/Ollama, senha e SQLite/Supabase existentes. Modelos sem suporte a ferramentas podem recusar perguntas livres nessa configuração; selecione um modelo compatível. Buscadores podem bloquear consultas. O comportamento real do modelo e o áudio/controle físico no celular/Xbox precisam de teste no serviço.
 

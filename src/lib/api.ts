@@ -3,6 +3,7 @@ import { loadBackend, normalizeBackend } from './backend';
 import { searchQuery, validSearchInfo, validSources } from '../../shared/search';
 import { lockPersonal } from './personal';
 import { streamLines } from '../../shared/stream';
+import { validProposal } from '../../shared/projects';
 
 export const BROWSER_MODE = import.meta.env.MODE === 'pages';
 
@@ -50,6 +51,7 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal, progr
     } else data = await response.json() as ChatResponse;
     if (typeof data.message !== 'string' || !data.message.trim() || typeof data.id !== 'string' || !['local', 'groq', 'ollama'].includes(data.provider) || !Number.isFinite(Date.parse(data.createdAt))) throw new Error('O backend retornou uma resposta inválida.');
     if ((data.sources !== undefined && !validSources(data.sources)) || (data.webSearch !== undefined && !validSearchInfo(data.webSearch))) throw new Error('O backend retornou fontes de pesquisa inválidas.');
+    if (data.proposal !== undefined && !validProposal(data.proposal)) throw new Error('O backend retornou uma proposta inválida.');
     return data;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('O assistente demorou para responder. Tente novamente.');

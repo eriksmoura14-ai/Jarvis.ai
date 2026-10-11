@@ -12,7 +12,9 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
-**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O aplicativo não controla o sistema operacional; a ferramenta oferecida ao modelo consulta somente informações públicas.
+**Projetos e tarefas:** [objetivos, etapas, prazos, progresso e propostas do chat para revisar](docs/projects.md). No modo pessoal, os dados acompanham sua conta no celular e computador. O painel funciona sem IA; planos propostos pela IA só são aplicados após **Confirmar proposta**. Reutiliza o Supabase existente, sem nova chave ou SQL.
+
+**Os comandos locais funcionam sem IA.** A conversa livre e o contexto recente têm integração opcional com Groq ou Ollama pelo backend, mas exigem um modelo configurado e acessível. Sem essa configuração, o site informa “IA não configurada” e mantém os comandos locais. O comando `pesquise <assunto>` consulta a web com fontes pelo backend, sem chave adicional de busca. O modelo pode solicitar pesquisa pública ou propor mudanças em projetos pessoais para confirmação. O aplicativo não controla o sistema operacional.
 
 ## Começar
 
@@ -43,6 +45,7 @@ Em um checkout existente, execute somente `npm ci` e `npm run dev`. O comando in
 | `npm start` | Servir a aplicação compilada e a API na porta 3001 |
 | `npm run test:e2e` | Testes de navegador em desktop e celular |
 | `npm run test:personal` | Login, memórias e sincronização com SQLite em desktop/celular |
+| `npm run test:projects` | Projetos, tarefas e revisão de propostas em desktop/celular |
 | `npm run check` | Testes, build e testes de navegador |
 
 `npm start` exige `npm run build` e deve ser executado na raiz do projeto. Fastify serve `dist/` e `/api` na mesma origem. Para testar essa versão com Playwright, execute `E2E_PRODUCTION=1 npm run test:e2e` em Bash, após o build. No PowerShell: `$env:E2E_PRODUCTION='1'; npm run test:e2e`.
@@ -151,15 +154,17 @@ server/
     model.ts              Chamadas Groq/Ollama e configuração segura
     hybrid.ts             Prioridade local e limites de IA
     research.ts           Pesquisa explícita/automática e resumo com fontes
-  interpretation.ts       Intenção, ferramenta de busca e seleção de notas
+  interpretation.ts       Intenção, ferramentas e seleção de notas/projetos
   search.ts               DuckDuckGo HTML / Bing RSS, limites e extração
   personal/               Login, sessões, comandos de memória e SQLite/Supabase
 shared/contracts.ts       Tipos de mensagem e contratos HTTP
 shared/context.ts         Seleção limitada do contexto recente
 shared/search.ts          Comandos de pesquisa e validação de fontes
+shared/projects.ts        Projetos, tarefas, validação e prioridades
 supabase/personal.sql     Tabela privada com RLS para o dono
 e2e/                      Testes Playwright
 e2e-personal/             Login, memória e sincronização em navegador
+e2e-projects/             Projetos e confirmação de propostas em navegador
 .github/workflows/ci.yml   Testes e build no GitHub Actions
 ```
 
@@ -169,7 +174,7 @@ Fluxo servidor: React → `POST /api/chat` → provedor local → SQLite quando 
 
 ### Dados e privacidade
 
-No **modo pessoal autenticado**, histórico, notas, memórias explícitas, sessões e orçamento de IA ficam no backend SQLite/Supabase. O histórico pessoal não é gravado no localStorage; somente preferências de interface/voz permanecem locais. As memórias podem acompanhar perguntas à IA. Consulte [dados, exclusão e ativação](docs/personal.md). Não há migração automática nem backup próprio.
+No **modo pessoal autenticado**, histórico, notas, memórias explícitas, projetos/tarefas, sessões e orçamento de IA ficam no backend SQLite/Supabase. O histórico pessoal não é gravado no localStorage; somente preferências de interface/voz permanecem locais. Memórias e seleções de notas/projetos podem acompanhar perguntas à IA. Consulte [dados, exclusão e ativação](docs/personal.md). Não há migração automática nem backup próprio.
 
 Os parágrafos abaixo descrevem o **modo servidor sem login configurado**. No modo Pages, tanto o histórico quanto as notas ficam no navegador. Sem backend configurado, a conversa não é enviada a uma API pelo aplicativo; com IA configurada, perguntas livres e contexto recente são enviados ao backend e ao provedor. Os dois modos não compartilham notas automaticamente.
 
@@ -230,7 +235,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 
 1. Configurar um provedor real e backend HTTPS; validar uma conversa real no celular e a disponibilidade/cota do provedor. Validar também Xbox, Safari/iOS, Edge desktop e Android com dispositivos físicos.
 2. Ativar e validar o modo pessoal com Supabase no seu serviço; acrescentar backup/exportação e exclusão individual de notas.
-3. Ampliar as ferramentas além da pesquisa pública, com escopo definido e confirmação para ações que alterem dados; atualmente alterações dependem de comandos explícitos ou do painel.
+3. Ampliar projetos/tarefas com edição, exclusão e exportação; planejar lembretes e calendário com opt-in antes de integrações externas.
 4. Expandir comandos e contexto de conversa sem prometer funções não implementadas.
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 

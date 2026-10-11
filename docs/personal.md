@@ -70,13 +70,18 @@ conexão incompleta nem troca automaticamente para armazenamento temporário.
   Uma edição é recusada se outro aparelho já mudou seu conteúdo ou o perfil;
   descarte a edição, confira os valores atualizados e tente novamente.
 - `anotar <texto>`, `notas` e `apagar notas` passam a usar a mesma conta nos aparelhos.
+- **Projetos e tarefas**, na tela inicial, guarda objetivos, etapas, prazos e
+  progresso na conta. O modelo pode propor mudanças para revisão, sem salvar
+  automaticamente. Veja [uso, confirmação e limites](projects.md). Não há novo
+  SQL ou variável para ativar o painel em uma conta pessoal já configurada.
 - As últimas 100 mensagens ficam na conta. A interface atualiza ao voltar para a
   aba e a cada 10 segundos enquanto está visível. A IA recebe o contexto recente
   armazenado no servidor, permitindo continuar uma conversa em outro aparelho.
   A janela enviada à IA é de até 10 mensagens e 8.000 caracteres, com até 2.000
   caracteres por mensagem. Não equivale a recordar todo o histórico. A IA não
-  consulta automaticamente notas; use `notas` para trazê-las à conversa.
-- **Limpar conversa** remove o histórico da conta, preservando notas e memórias.
+  recebe seleções limitadas de notas e projetos pertinentes; use `notas` ou
+  `meus projetos` para consultar as listas locais.
+- **Limpar conversa** remove o histórico da conta, preservando notas, memórias e projetos.
   Respostas que terminarem depois dessa limpeza não restauram o histórico apagado.
 - **Sair da conta** revoga a sessão do aparelho. Mudar `JARVIS_PASSWORD` e reiniciar
   o serviço invalida todas as sessões anteriores; os dados da conta são preservados.

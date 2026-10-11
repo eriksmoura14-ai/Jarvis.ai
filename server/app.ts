@@ -19,7 +19,8 @@ import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type Do
 import { memoryCommand } from './personal/commands.js';
 import { SpeechError, SpeechProvider, type SpeechConfig } from './speech.js';
 import { MAX_SPEECH_CHARACTERS } from '../shared/speech.js';
-import { selectedNotes } from './interpretation.js';
+import { selectedNotes, selectedProjects, validatedProjectChange } from './interpretation.js';
+import { ProjectProposals, registerProjectRoutes, projectCommand } from './personal/projects.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -42,6 +43,7 @@ export async function buildApp(options: AppOptions = {}) {
   const personal = options.personal ? new PersonalStore(options.personalBackend ?? (options.personal.supabase
     ? new SupabaseDocument(options.personal.supabase.url, options.personal.supabase.key) : new SQLiteDocument(store))) : undefined;
   const auth = options.personal && personal ? new PersonalAuth(options.personal, personal) : undefined;
+  const projectProposals = new ProjectProposals();
   const local = new LocalProvider(personal ?? store);
   const provider = options.provider ?? (options.ai ? new HybridProvider(local, new ModelProvider(options.ai, options.modelFetch), day => (personal ?? store).claimAIRequest(day, dailyLimit)) : local);
   const assistant = new ResearchProvider(provider, new WebSearch(options.searchFetch));
@@ -77,6 +79,7 @@ export async function buildApp(options: AppOptions = {}) {
     reply.header('Cache-Control', 'no-store');
     const revision = process.env.RENDER_GIT_COMMIT;
     return { status: 'ok', provider: provider.name, version: '0.1.0', streaming: true, webSearch: { enabled: true },
+      ...(personal ? { projects: { enabled: true } } : {}),
       ...(provider instanceof HybridProvider ? { interpretation: { enabled: true } } : {}),
       ...(speech ? { speech: { configured: true, provider: 'elevenlabs' } } : {}),
       ...(revision && /^[0-9a-f]{40}$/i.test(revision) ? { revision } : {}),
@@ -98,6 +101,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.get('/api/personal/session', async request => personal && auth
     ? { enabled: true, authenticated: await auth.authenticated(request), storage: personal.name } : { enabled: false });
   if (personal && auth) {
+    registerProjectRoutes(app, personal, projectProposals);
     app.post<{ Body: { password: string } }>('/api/personal/login', {
       config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
       schema: { body: { type: 'object', additionalProperties: false, required: ['password'], properties: { password: { type: 'string', minLength: 1, maxLength: 200 } } } },
@@ -183,7 +187,8 @@ export async function buildApp(options: AppOptions = {}) {
       controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
       const body = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
-        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, request.body.message) } : request.body;
+        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, request.body.message),
+        projectData: selectedProjects(record.snapshot.projects ?? [], request.body.message), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []) } : request.body;
       const prepared = performance.now();
       let lastEmit = -Infinity;
       const progress = emit ? (text: string) => {
@@ -192,7 +197,11 @@ export async function buildApp(options: AppOptions = {}) {
         // Snapshots allow research fallback to replace a failed partial summary.
         if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: text.slice(0, 6000) }); }
       } : undefined;
-      const response: ChatResponse = { ...(command?.response ?? await assistant.respond(body, controller.signal, progress)), id: randomUUID(), createdAt: new Date().toISOString() };
+      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot) : undefined) ?? await assistant.respond(body, controller.signal, progress);
+      const { proposal: _proposal, ...safe } = raw;
+      const change = 'projectChange' in raw ? validatedProjectChange(raw.projectChange, body) : undefined;
+      if ('projectChange' in safe) delete safe.projectChange;
+      const response: ChatResponse = { ...safe, id: randomUUID(), createdAt: new Date().toISOString(), ...(change && snapshot ? { proposal: projectProposals.create(change, snapshot) } : {}) };
       controller.signal.throwIfAborted();
       const answered = performance.now();
       if (personal && snapshot) {

@@ -49,7 +49,7 @@ describe('interpretação e pesquisa autônoma', () => {
     const reply = await app.inject({ method: 'POST', url: '/api/chat', headers, payload: question('O que eu anotei sobre meu projeto Jarvis?', { webSearch: true }) });
     expect(reply.json().message).toContain('revisar o projeto'); expect(searchFetch).not.toHaveBeenCalled();
     const body = JSON.parse(modelFetch.mock.calls[0][1]?.body as string);
-    expect(body.tools).toBeUndefined(); expect(body.messages[0].content).toContain('revisar projeto Jarvis'); expect(body.messages[0].content).toContain('Carlos');
+    expect(body.tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual(['propose_project_change']); expect(body.messages[0].content).toContain('revisar projeto Jarvis'); expect(body.messages[0].content).toContain('Carlos');
     const name = await app.inject({ method: 'POST', url: '/api/chat', headers, payload: question('qual meu nome', { webSearch: true }) });
     expect(name.json().message).toContain('Carlos'); expect(modelFetch).toHaveBeenCalledTimes(1);
     const clear = await app.inject({ method: 'POST', url: '/api/chat', headers, payload: question('apagar notas', { webSearch: true }) });

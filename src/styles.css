@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+.projects-panel form { display: grid; gap: .65rem; margin: 1rem 0; }
+.projects-panel input, .projects-panel textarea { width: 100%; min-height: 44px; padding: .75rem; border: 1px solid #34516a; border-radius: .7rem; background: #111e2d; color: #d6e7f4; font: inherit; }
+.projects-panel textarea { min-height: 90px; resize: vertical; }
+.project-card, .project-proposal, .project-priorities { border: 1px solid #294257; border-radius: 1rem; padding: 1rem; margin: .8rem 0; background: #101c2b; overflow-wrap: anywhere; }
+.project-card h3, .project-proposal h3 { font-size: 1rem; margin-bottom: .5rem; color: #b1dfff; }
+.project-card ul, .project-priorities ul { list-style: none; padding: 0; }
+.project-card li { display: flex; gap: .6rem; justify-content: space-between; align-items: center; margin: .65rem 0; }
+.project-card li > span { min-width: 0; flex: 1; }
+.project-card small, .project-priorities small, .project-proposal small { display: block; color: #8fa9bd; font-size: .75rem; }
+.project-card progress { width: 100%; accent-color: #76c9ff; }
+.project-card > button { margin: .4rem .4rem .4rem 0; }
+.project-progress, .project-priorities p { font-size: .8rem; color: #9cb5c8; margin: .6rem 0; }
+.task-done { text-decoration: line-through; color: #88a393; }
+.project-priorities { width: 100%; max-width: 640px; font-size: .85rem; text-align: left; }
+.project-priorities li { margin-top: .5rem; }
+.project-proposal { max-width: 640px; width: 100%; text-align: left; }
+.project-proposal ol { padding-left: 1.25rem; }
+.project-proposal li, .project-proposal p { margin: .7rem 0; }
+
 .search-auto-hint { font-size: .75rem; color: #8ca1b6; text-align: center; margin: .6rem 0; overflow-wrap: anywhere; }
 .search-queries { font-size: .8rem; color: #94a8bd; overflow-wrap: anywhere; }
 .search-queries summary { min-height: 44px; cursor: pointer; padding: .75rem 0; }

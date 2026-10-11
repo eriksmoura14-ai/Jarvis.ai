@@ -3,6 +3,7 @@ import { MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type Message, type PersonalMe
 import type { NoteStore } from '../database.js';
 import { conversationContext } from '../../shared/context.js';
 import { memorySlot, personalProfile, sameMemory } from '../../shared/memory.js';
+import { MAX_PROJECTS, MAX_TASKS, validChange, type PersonalProject, type ProjectChange } from '../../shared/projects.js';
 
 export class PersonalError extends Error {
   constructor(message: string, readonly statusCode = 503) { super(message); }
@@ -12,6 +13,7 @@ interface Document {
   generation: number; usage: { day: string; count: number };
   sessions: { hash: string; version: string; expires: number }[];
   contextHistory?: Message[];
+  projects?: PersonalProject[]; projectsRevision?: number; appliedProjectProposals?: string[];
 }
 const empty = (): Document => ({ history: [], memories: [], notes: [], generation: 0, usage: { day: '', count: 0 }, sessions: [] });
 function boundedHistory(messages: Message[]): Message[] {
@@ -92,9 +94,44 @@ export class PersonalStore implements NoteRepository {
     const lastSearch = [...activeHistory].reverse().find(message => message.role === 'assistant' && message.webSearch);
     const searchContext = lastSearch?.webSearch;
     const publicSearchTerms = (lastSearch?.sources ?? []).map(source => source.title + ' ' + source.snippet).join(' ').slice(0, 4500);
-    return { version, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name } };
+    return { version, context: conversationContext(activeHistory), searchContext, publicSearchTerms, snapshot: { history: value.history, memories: value.memories, notes: value.notes, generation: value.generation, storage: this.name, projects: value.projects ?? [], projectsRevision: value.projectsRevision ?? 0 } };
   }
   async snapshot(): Promise<PersonalSnapshot> { return (await this.snapshotRecord()).snapshot; }
+  async applyProjectChange(change: ProjectChange, revision: number, proposal?: { id: string; generation: number }) {
+    if (!validChange(change)) throw new PersonalError('Proposta de projeto inválida.', 400);
+    return this.change(value => {
+      if (proposal && value.appliedProjectProposals?.includes(proposal.id)) return { ok: true, alreadyApplied: true };
+      if ((value.projectsRevision ?? 0) !== revision || proposal && proposal.generation !== value.generation) throw new PersonalError('Seus projetos ou memórias mudaram. Atualize o painel e peça uma nova proposta.', 409);
+      const projects = value.projects ??= [];
+      const now = new Date().toISOString();
+      const tasks = 'tasks' in change ? change.tasks.map(task => ({ id: randomUUID(), title: task.title.trim(), ...(task.dueDate ? { dueDate: task.dueDate } : {}), status: 'pending' as const, createdAt: now })) : [];
+      if (projects.reduce((count, project) => count + project.tasks.length, 0) + tasks.length > MAX_TASKS) throw new PersonalError('Limite de 200 tarefas. Não foi possível adicionar outras.', 409);
+      if (change.action === 'create_project') {
+        if (projects.length >= MAX_PROJECTS) throw new PersonalError('Limite de 20 projetos.', 409);
+        if (projects.some(project => !project.archived && project.title.toLocaleLowerCase('pt-BR') === change.title.trim().toLocaleLowerCase('pt-BR'))) throw new PersonalError('Já existe um projeto ativo com esse nome.', 409);
+        projects.push({ id: randomUUID(), title: change.title.trim(), description: change.description.trim(), archived: false, createdAt: now, updatedAt: now, tasks });
+      } else {
+        const project = projects.find(project => project.id === change.projectId);
+        if (!project) throw new PersonalError('Esse projeto não existe mais.', 404);
+        if (change.action === 'archive_project' || change.action === 'restore_project') project.archived = change.action === 'archive_project';
+        else {
+          if (project.archived) throw new PersonalError('Restaure o projeto antes de alterar suas tarefas.', 409);
+          if (change.action === 'add_tasks') project.tasks.push(...tasks);
+          else if ('taskId' in change) {
+            const task = project.tasks.find(task => task.id === change.taskId);
+            if (!task) throw new PersonalError('Essa tarefa não existe mais.', 404);
+            task.status = change.action === 'complete_task' ? 'done' : 'pending';
+            if (task.status === 'done') task.completedAt = now; else delete task.completedAt;
+          }
+        }
+        project.updatedAt = now;
+      }
+      value.projectsRevision = (value.projectsRevision ?? 0) + 1;
+      if (proposal) value.appliedProjectProposals = [...(value.appliedProjectProposals ?? []), proposal.id].slice(-50);
+      this.resetContext(value);
+      return { ok: true, alreadyApplied: false };
+    });
+  }
   async add(_session: string, content: string) { return this.change(value => { if (value.notes.length >= 100) return false; value.notes.push({ content }); return true; }); }
   async list(_session: string) { return (await this.snapshot()).notes; }
   async clearWithReceipt() { return this.change(value => { const count = value.notes.length; value.notes = []; this.resetContext(value); return { count, generation: value.generation }; }); }

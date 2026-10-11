@@ -375,6 +375,12 @@ describe('Adaptador Supabase por HTTPS', () => {
     const store = new PersonalStore(new SupabaseDocument('https://fixture.supabase.co', 'sb_secret_fixture_only', transport));
     await store.remember('primeira memória'); await store.remember('segunda memória');
     expect((await store.snapshot()).memories).toHaveLength(2);
+    expect((await store.snapshot()).projects).toEqual([]);
+    await store.applyProjectChange({ action: 'create_project', title: 'Projeto durável', description: '', tasks: [{ title: 'Primeira etapa' }] }, 0);
+    const reopened = new PersonalStore(new SupabaseDocument('https://fixture.supabase.co', 'sb_secret_fixture_only', transport));
+    expect((await reopened.snapshot()).projects?.[0].tasks[0].title).toBe('Primeira etapa');
+    expect((await reopened.snapshot()).projectsRevision).toBe(1);
+    expect((await reopened.snapshot()).memories).toHaveLength(2);
     expect(requests.every(request => request.url.startsWith('https://fixture.supabase.co/rest/v1/jarvis_private?'))).toBe(true);
     expect(requests[0].init?.headers).toMatchObject({ apikey: 'sb_secret_fixture_only' });
     expect(requests[0].init?.headers).not.toHaveProperty('Authorization');

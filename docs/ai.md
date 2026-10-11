@@ -6,6 +6,12 @@ Comandos como `hora` e `calcular ...` continuam locais quando a opção de pesqu
 
 ## 1. Escolher e configurar o modelo no backend
 
+No modo pessoal, o modelo também recebe uma seleção limitada de projetos e
+tarefas e pode usar `propose_project_change` para preparar mudanças. Criar
+projetos, adicionar tarefas e concluir tarefas requer **Confirmar proposta**
+na interface; a chamada do modelo não grava os dados. O painel funciona sem IA.
+Consulte [projetos, privacidade e limites](projects.md).
+
 Node.js 24 e SQLite continuam sendo suficientes para o backend. Copie `.env.example` para `.env` em desenvolvimento. Em hospedagem, use as variáveis de ambiente do serviço. Nunca versione `.env` nem use variáveis `VITE_` para chaves.
 
 ### Groq: API de modelo
