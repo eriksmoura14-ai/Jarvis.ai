@@ -1,6 +1,6 @@
 import type { ChatRequest, ChatResponse, HealthResponse } from '../../shared/contracts';
 import { loadBackend, normalizeBackend } from './backend';
-import { searchQuery, validSearchInfo, validSources } from '../../shared/search';
+import { automaticSearchQuery, validSearchInfo, validSources } from '../../shared/search';
 import { lockPersonal } from './personal';
 import { streamLines } from '../../shared/stream';
 import { validProposal } from '../../shared/projects';
@@ -14,7 +14,7 @@ export async function sendMessage(body: ChatRequest, signal?: AbortSignal, progr
   if (BROWSER_MODE) {
     const { browserCommand } = await import('./browser');
     if (signal?.aborted) throw new DOMException('Request canceled', 'AbortError');
-    if (searchQuery(body) !== undefined) {
+    if (automaticSearchQuery(body.message) !== undefined) {
       if (!loadBackend()) throw new Error('A pesquisa na web precisa de um backend conectado em Preferências.');
     } else {
       const local = await browserCommand(body);

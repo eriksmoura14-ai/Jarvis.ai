@@ -78,3 +78,47 @@ test('proposta aparece para revisão, descartar não salva e confirmação falha
   await page.reload(); await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Projeto Plano proposto', exact: true })).toContainText('Revisar TypeScript');
 });
+
+test('planejamento usa notas reais, salva somente na confirmação e não duplica tarefas concluídas', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat'));
+  await enter(page);
+  let initial = await (await page.request.get('/api/personal/data')).json();
+  // This suite shares a temporary account. Finish the fixture tasks so the
+  // daily plan can select the newly imported next steps, without deleting data.
+  for (const project of initial.projects) for (const task of project.tasks) {
+    if (project.archived || task.status !== 'pending') continue;
+    const saved = await page.request.post('/api/personal/projects/change', { headers: client, data: { projectsRevision: initial.projectsRevision,
+      change: { action: 'complete_task', projectId: project.id, taskId: task.id } } });
+    expect(saved.status()).toBe(200); initial = await (await page.request.get('/api/personal/data')).json();
+  }
+  const content = '# Tarefas pessoais\n- [ ] Rever candidatura\n- [ ] Conferir orçamento\n- [x] Etapa já concluída';
+  const imported = await page.request.post('/api/personal/knowledge/import', { headers: client, data: { files: [{ path: '04 Planejamento/Tarefas pessoais.md', content }], replace: false, libraryRevision: initial.libraryRevision } });
+  expect(imported.status()).toBe(200);
+  await page.reload();
+  await page.getByRole('button', { name: 'Planejar meu dia', exact: true }).click();
+  const proposal = page.getByRole('region', { name: 'Revisar proposta do JARVIS' });
+  await expect(proposal).toContainText('Rever candidatura');
+  await expect(proposal).toContainText('Conferir orçamento');
+  await expect(proposal).not.toContainText('Etapa já concluída');
+  await expect(page.locator('.message-assistant').last()).toContainText('Eu começaria por');
+  const before = await (await page.request.get('/api/personal/data')).json();
+  expect(before.projects).toEqual(initial.projects);
+  await page.getByRole('button', { name: 'Confirmar proposta', exact: true }).click();
+  await expect(proposal).toHaveCount(0);
+  let saved = await (await page.request.get('/api/personal/data')).json();
+  const daily = saved.projects.find((project: { title: string }) => project.title === 'Plano diário');
+  expect(daily.tasks.map((task: { title: string }) => task.title)).toEqual(['Rever candidatura', 'Conferir orçamento']);
+  const note = saved.library.find((note: { path: string }) => note.path === '04 Planejamento/Tarefas pessoais.md');
+  expect((await (await page.request.get(`/api/personal/knowledge/${note.id}`)).json()).content).toBe(content);
+  await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+  const card = page.getByRole('article', { name: 'Projeto Plano diário', exact: true });
+  await card.getByRole('button', { name: 'Concluir tarefa: Rever candidatura', exact: true }).click();
+  await card.getByRole('button', { name: 'Concluir tarefa: Conferir orçamento', exact: true }).click();
+  await page.getByRole('button', { name: 'Fechar janela', exact: true }).click();
+  await page.getByRole('button', { name: 'Planejar meu dia', exact: true }).click();
+  await expect(page.locator('.message-assistant').last()).toContainText('Qual objetivo');
+  await expect(proposal).toHaveCount(0);
+  saved = await (await page.request.get('/api/personal/data')).json();
+  expect(saved.projects.find((project: { id: string }) => project.id === daily.id).tasks).toHaveLength(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

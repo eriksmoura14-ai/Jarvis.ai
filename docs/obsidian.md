@@ -225,7 +225,7 @@ Sem IA, pedidos explícitos sobre a biblioteca mostram os trechos reais, sem
 fabricar um resumo. `minhas notas do Obsidian` lista até vinte notas sem IA;
 o painel mostra a biblioteca completa. Uma pergunta explícita sem trechos
 pertinentes informa a ausência, sem fingir que consultou a web. Esses pedidos
-têm prioridade sobre a opção **Pesquisar na web**. Perguntas comuns também podem
+usam fontes pessoais na escolha automática, sem seletor de pesquisa. Perguntas comuns também podem
 receber trechos pertinentes como contexto do modelo.
 
 O título vem do primeiro cabeçalho de nível um fora de blocos de código, ou do

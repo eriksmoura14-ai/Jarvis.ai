@@ -165,9 +165,6 @@ a { color: inherit; text-decoration: none; }
 .message-badge { background: #122c43; color: #72aed8; border: 1px solid #254462; border-radius: 3px; padding: 2px 4px; font-size: 6px; letter-spacing: .7px; }
 .message-body p { font-size: 12px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; color: #aebed4; }
 .message-user .message-body p { color: #d4e2f2; }
-.search-toggle { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px; min-height: 44px; margin-top: 5px; color: #a6c6e0; font-size: 12px; cursor: pointer; }
-.search-toggle input { width: 17px; height: 17px; accent-color: #69bafa; }
-.search-toggle small { color: #829bb2; font-size: 10px; }
 .search-sources { margin-top: 13px; text-align: left; }
 .search-sources .search-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; font-size: 10px; color: #91bbdc; margin: 0 0 7px; }
 .search-sources ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }

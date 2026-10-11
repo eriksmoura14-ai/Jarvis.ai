@@ -18,6 +18,56 @@ const feed = (topic: string) => new Response(`<rss><channel><item><title>${topic
 async function setup(options: Parameters<typeof buildApp>[0] = {}) { const app = await buildApp({ databasePath: ':memory:', ...options }); apps.push(app); return app; }
 
 describe('interpretação e pesquisa autônoma', () => {
+  it('pesquisa uma pergunta atual mesmo se o modelo responder sem solicitar a ferramenta e resume em parágrafos', async () => {
+    const modelFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(text('Posso responder usando minha memória.'))
+      .mockResolvedValueOnce(text('## Resumo\n- Há novidades de IA [1].\n- O contexto está nos trechos consultados [1].'));
+    const searchFetch = vi.fn<typeof fetch>(async () => feed('Novidades de IA'));
+    const app = await setup({ ai, modelFetch, searchFetch });
+    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Tem novidades de IA hoje?') });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ command: 'search', message: 'Há novidades de IA [1]. O contexto está nos trechos consultados [1].' });
+    expect(response.json().sources).toHaveLength(1); expect(response.json().knowledgeSources).toBeUndefined();
+    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).toHaveBeenCalled();
+    expect(response.json().webSearch.queries).toHaveLength(1);
+  });
+  it('mantém pesquisa e trechos reais quando a cota do modelo acabou, sem inventar resumo por IA', async () => {
+    const modelFetch = vi.fn<typeof fetch>(async () => Response.json({ error: { code: 'rate_limit_exceeded' } }, { status: 429 }));
+    const searchFetch = vi.fn<typeof fetch>(async () => feed('Preço PS5'));
+    const app = await setup({ ai, modelFetch, searchFetch });
+    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Qual o preço do PS5 hoje?') });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ command: 'search', provider: 'local' });
+    expect(response.json().message).toContain('resumo por IA está indisponível'); expect(response.json().message).toContain('[1]');
+    expect(response.json().message).not.toMatch(/^\s*[-•*]\s/m); expect(response.json().sources).toHaveLength(1);
+  });
+  it('entende saudação e pergunta falada sem IA, com assunto e notícia datada', async () => {
+    const searchFetch = vi.fn<typeof fetch>(async () => feed('Guerra na Ucrânia'));
+    const app = await setup({ searchFetch });
+    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Bom dia, Jarvis, pode me dizer quais são as novidades sobre a guerra na Ucrânia hoje?') });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ command: 'search', webSearch: { news: true }, sources: [{ title: 'Guerra na Ucrânia' }] });
+    expect(response.json().webSearch.query).not.toContain('Jarvis'); expect(response.json().webSearch.query).not.toContain('Bom dia');
+  });
+  it('não impõe busca a explicações estáveis nem formato de lista, mas conserva listas solicitadas', async () => {
+    const modelFetch = vi.fn<typeof fetch>(async () => text('- React organiza a interface.\n- Componentes são reutilizáveis.'));
+    const searchFetch = vi.fn<typeof fetch>();
+    const app = await setup({ ai, modelFetch, searchFetch });
+    const direct = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Agora me explique React') });
+    expect(direct.json().message).toBe('React organiza a interface. Componentes são reutilizáveis.');
+    const listed = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Liste conceitos de React') });
+    expect(listed.json().message).toContain('- React'); expect(searchFetch).not.toHaveBeenCalled(); expect(modelFetch).toHaveBeenCalledTimes(2);
+  });
+  it('aplica o mesmo formato de conversa ao texto progressivo e à resposta salva', async () => {
+    const list = '## Resumo\n- React organiza a interface.\n- Componentes são reutilizáveis.';
+    const modelFetch: typeof fetch = async () => new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: list }, finish_reason: null }] })
+      + '\n\ndata: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
+    const app = await setup({ ai, modelFetch });
+    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Explique React', { stream: true }) });
+    const events = response.body.trim().split('\n').map(line => JSON.parse(line));
+    const partial = events.find(event => event.type === 'text'); const result = events.find(event => event.type === 'result');
+    expect(partial.text).toBe('React organiza a interface. Componentes são reutilizáveis.');
+    expect(result.response.message).toBe(partial.text);
+  });
   it.each(['Tem novidades de tecnologia e IA hoje?', 'Pesquise novidades de tecnologia e IA hoje?'])('executa consultas complementares e resume fontes reais: %s', async message => {
     const modelFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(tool(['tecnologia', 'inteligência artificial'], true)).mockResolvedValueOnce(text('Há novidades nos dois temas [1][2].'));
     const searchFetch = vi.fn<typeof fetch>(async url => feed(new URL(String(url)).searchParams.get('q')!));
@@ -133,7 +183,7 @@ describe('interpretação e pesquisa autônoma', () => {
       return feed('IA');
     });
     const assistant = { name: 'groq' as const, respond: vi.fn(async () => ({ message: '', command: 'conversation' as const, provider: 'groq' as const, searchPlan: { queries: ['IA', 'IA hoje'], news: true } })) };
-    await expect(new ResearchProvider(assistant, new WebSearch(searchFetch)).respond(question('Tem novidades de IA?'), abort.signal)).rejects.toThrow();
+    await expect(new ResearchProvider(assistant, new WebSearch(searchFetch)).respond(question('Que avanços ocorreram em IA?'), abort.signal)).rejects.toThrow();
     expect(searchFetch).toHaveBeenCalledTimes(1); expect(assistant.respond).toHaveBeenCalledTimes(1);
   });
   it('apagar notas durante uma consulta pessoal impede salvar ou devolver a resposta com dados antigos', async () => {

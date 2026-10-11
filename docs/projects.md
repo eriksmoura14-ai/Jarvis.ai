@@ -30,8 +30,8 @@ duas últimas ações estão no painel. Não há edição de títulos ou exclus�
 projetos nesta versão.
 
 Sem modelo, `meus projetos`, `minhas tarefas` e `o que tenho para fazer hoje`
-consultam os dados reais da conta sem cota de IA, mesmo com **Pesquisar na web**
-marcada. A consulta lista até dez pendências, incluindo próximas tarefas e
+consultam os dados reais da conta sem cota de IA e sem consultar a web.
+A consulta lista até dez pendências, incluindo próximas tarefas e
 tarefas sem prazo, com seus rótulos.
 
 ## Sincronização e confirmação
@@ -58,6 +58,12 @@ registro de que a proposta foi aplicada; consulte o painel para conferir.
 Alterar um projeto reinicia o contexto ativo da IA e invalida respostas antigas
 em andamento, preservando histórico visível, memórias e notas. Isso evita
 reutilizar um estado anterior das tarefas ao responder.
+
+## Planejar o dia
+
+Diga “planeje meu dia”, “o que devo fazer hoje?” ou toque em **Planejar meu dia**. Não exige cota de IA: ordena até três tarefas pendentes pelos prazos reais no fuso do aparelho. Se houver espaço, usa checklists pendentes e tabelas de metas pessoais do Obsidian para sugerir próximos passos, com referências. Metas viram sugestões para definir um próximo passo, sem afirmar realização ou criar prazos. Não infere urgência só porque uma meta aparece primeiro numa nota.
+
+Passos ainda não registrados aparecem numa proposta para o projeto **Plano diário**. Só a confirmação os salva. O projeto é reutilizado; tarefas já registradas, concluídas ou arquivadas não são duplicadas. Limites de projetos/tarefas continuam valendo. Alterar a fonte invalida a proposta antiga. Não modifica os arquivos do Obsidian. Conclua as tarefas no painel quando realmente terminar; o JARVIS não presume conclusão.
 
 ## Dados e limites
 

@@ -8,7 +8,9 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Ritmo da conversa e recepção:** [resposta progressiva, voz em partes, tempos reais, “Jarvis, pare” e notícias opcionais ao abrir](docs/conversation.md). Não exige novas chaves, variáveis ou tabelas; usa as integrações já configuradas. Notícias e interrupção por voz são ativadas em Preferências, por aparelho.
 
-**Interpretação de pedidos:** [conversa contextual, consulta às notas pessoais e pesquisa automática](docs/interpretation.md). Continuações como “no Obsidian”, “explique melhor” e “resuma” usam o assunto ativo. A IA pode consultar até três notas pelo catálogo de títulos quando a busca por palavras não basta, ou solicitar até três buscas públicas complementares. Comandos e pedidos pessoais têm prioridade sobre a opção web marcada.
+**Planejamento diário:** diga “planeje meu dia” ou use o botão no quadro de prioridades. O JARVIS combina até três tarefas pendentes e próximos passos das notas. Sugestões novas viram propostas para revisar antes de salvar. Veja [projetos e tarefas](docs/projects.md).
+
+**Interpretação de pedidos:** [conversa contextual, consulta às notas pessoais e pesquisa automática](docs/interpretation.md). Continuações como “no Obsidian”, “explique melhor” e “resuma” usam o assunto ativo. A IA pode consultar até três notas pelo catálogo de títulos quando a busca por palavras não basta, ou solicitar até três buscas públicas complementares. Comandos e pedidos pessoais usam dados privados; perguntas atuais acionam a pesquisa automaticamente, sem seletor web. Respostas usam parágrafos por padrão.
 
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
@@ -109,7 +111,7 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 - Controles com foco visível, rótulos acessíveis, áreas de toque, diálogo com foco contido, retorno do foco, região de mensagens acessível e respeito a `prefers-reduced-motion`.
 - Navegação por Tab/Shift+Tab e suporte à Gamepad API para controles de mapeamento padrão: direcional percorre controles; A ativa; B fecha o diálogo. A consulta ao controle só roda quando há um controle conectado.
 - Integração opcional com Groq e Ollama no backend, contexto de até 10 mensagens/8.000 caracteres e identificação de respostas da IA. Os comandos conhecidos têm prioridade e não consomem o modelo. A conexão externa no Pages é configurada por endereço HTTPS, sem chave no frontend.
-- Pesquisa explícita por voz/texto ou opção **Pesquisar na web**, com filtro por assunto, até cinco fontes clicáveis, trechos reais e resumo opcional pela IA. Pedidos de notícias consultam fontes datadas nos últimos sete dias e exibem a data de publicação informada pelo feed. Veja [uso pessoal e limites da pesquisa](docs/search.md).
+- Pesquisa automática por voz/texto, sem botão para ativar, com filtro por assunto, até cinco fontes clicáveis, trechos reais e resumo em parágrafos pela IA quando disponível. Pedidos de notícias consultam fontes datadas nos últimos sete dias e exibem a data de publicação informada pelo feed. Veja [uso pessoal e limites da pesquisa](docs/search.md).
 - API com validação de corpo/contexto, limite de requisições, orçamento diário de IA persistido em SQLite, cancelamento, respostas de erro, CORS por origem explícita, cabeçalhos de segurança e consultas parametrizadas.
 
 ### Experimente

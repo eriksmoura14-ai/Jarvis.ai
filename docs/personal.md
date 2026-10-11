@@ -187,7 +187,7 @@ pagos nem garantido funcionamento contínuo. Faça backups pelo seu provedor.
 
 ## Testar após ativar
 
-Perguntas pessoais podem usar notas recuperadas além das memórias: até cinco trechos de mil caracteres, selecionados por palavras pertinentes e recência. Teste `O que eu anotei sobre meu projeto Jarvis?`. A seleção é limitada, sem busca por significado nem leitura de todas as notas. O modelo recebe esses dados, mas comandos/perguntas pessoais reconhecidos não viram pesquisas públicas quando a opção web está marcada. Veja [interpretação](interpretation.md). `apagar notas` reinicia o contexto e invalida respostas em andamento com as notas antigas, preservando o histórico visível.
+Perguntas pessoais podem usar notas recuperadas além das memórias: até cinco trechos de mil caracteres, selecionados por palavras pertinentes e recência. Teste `O que eu anotei sobre meu projeto Jarvis?`. A seleção é limitada, sem busca por significado nem leitura de todas as notas. O modelo recebe esses dados, mas comandos/perguntas pessoais reconhecidos não viram pesquisas públicas com a escolha automática de fontes. Veja [interpretação](interpretation.md). `apagar notas` reinicia o contexto e invalida respostas em andamento com as notas antigas, preservando o histórico visível.
 
 Entre no computador e celular, salve uma preferência e uma nota, abra o outro
 aparelho e confira os dados. Recarregue, encerre uma sessão e confirme que ela pede

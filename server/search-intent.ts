@@ -7,12 +7,12 @@ const concepts = (text: string) => normalize(text)
   .replace(/\b(?:ukraine|ukrainians?|ucrania|ucranian[oa]s?)\b/g, ' ucrania ')
   .replace(/\b(?:war|guerra)\b/g, ' guerra ')
   .replace(/\b(?:technology|technologies|tecnologias?|tecnologic[oa]s?)\b/g, ' tecnologia ');
-const ignored = new Set('a o as os um uma uns umas de do da dos das e em no na nos nas para por com sobre que qual quais como onde quando the of and in on for what how latest recent ultimas ultimos ultima ultimo noticias noticia news headlines manchetes hoje today atual atuais recentes novidades me diga mostre quero saber favor please'.split(' '));
+const ignored = new Set('a o as os um uma uns umas de do da dos das e em no na nos nas para por com sobre que qual quais como onde quando quanto the of and in on for what how latest recent ultimas ultimos ultima ultimo noticias noticia news headlines manchetes hoje today atual atuais recentes novidades me diga mostre quero saber favor please tem temos ha existe existem esta estao sao agora atualmente pode poderia consegue dizer informe mim pra voce jarvis oi ola bom dia boa tarde noite'.split(' '));
 
 export function searchIntent(query: string) {
   // Use the same command grammar even when WebSearch is called directly.
   query = searchQuery({ message: query, webSearch: true }) ?? query;
-  const news = /\b(?:noticias?|news|headlines|manchetes)\b/.test(normalize(query));
+  const news = /\b(?:noticias?|novidades|news|headlines|manchetes)\b/.test(normalize(query));
   // Expand whole-word acronyms: "ia" must never match Bahrain or other substrings.
   const subject = query.replace(/^\s*(?:sobre|a respeito de)\s+/i, '').replace(/\bia\b/gi, 'inteligência artificial');
   const engineQuery = news ? subject

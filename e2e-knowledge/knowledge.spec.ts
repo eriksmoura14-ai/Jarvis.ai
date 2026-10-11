@@ -51,9 +51,9 @@ test('outro aparelho recebe notas e atualização exige autorização sem sobres
     await expect(page.getByRole('article', { name: 'Nota Rotina' })).not.toContainText('Dado antigo');
   } finally { await context.close(); }
 });
-test('chat consulta notas reais mesmo com web marcada, preserva referências e remove só a cópia', async ({ page }) => {
+test('chat consulta notas reais com pesquisa automática, preserva referências e remove só a cópia', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('jarvis.view.v1', 'chat')); await enter(page);
-  await page.getByLabel('Pesquisar na web').check(); await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('O que eu já estudei sobre React no meu Obsidian?');
+  await expect(page.getByLabel('Pesquisar na web')).toHaveCount(0); await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('O que eu já estudei sobre React no meu Obsidian?');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.getByRole('log', { name: 'Mensagens da conversa' })).toContainText('useEffect sincroniza');
   await expect(page.getByRole('region', { name: 'Notas consultadas' })).toBeVisible();
@@ -78,7 +78,7 @@ test('esclarece a fonte, entende o tema respondido e mantém a continuação nas
     files: [{ path: 'Interpretacao.md', content: '# React contextual\nComponentes compõem interfaces.' }], replace: false, libraryRevision: initial.libraryRevision,
   } });
   expect(imported.ok()).toBe(true); await page.reload();
-  await page.getByLabel('Pesquisar na web').check();
+  await expect(page.getByLabel('Pesquisar na web')).toHaveCount(0);
   const send = async (message: string) => {
     await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill(message);
     await page.getByRole('button', { name: 'Enviar mensagem' }).click();

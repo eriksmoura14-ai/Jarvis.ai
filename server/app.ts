@@ -26,6 +26,8 @@ import { registerKnowledgeRoutes } from './personal/knowledge.js';
 import { retrieveKnowledge, knowledgeReply, knowledgeCatalog, readKnowledge } from './personal/knowledge-index.js';
 import { resolveConversation } from './conversation.js';
 import type { AssistantInput } from './interpretation.js';
+import { conversationalReply } from '../shared/dialogue.js';
+import { dailyPlan } from './personal/daily-plan.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -222,8 +224,9 @@ export async function buildApp(options: AppOptions = {}) {
       controller.signal.throwIfAborted();
       const snapshot = record?.snapshot;
       const resolution = resolveConversation(record?.context ?? request.body.context ?? [], request.body.message, record?.lastAnswerFromKnowledge);
-      let knowledgeContext = record ? retrieveKnowledge(record.knowledge, resolution.query) : [];
-      const body: AssistantInput = record ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
+      const plan = record ? dailyPlan(request.body, record.snapshot, record.knowledge) : undefined;
+      let knowledgeContext = plan?.sources ?? (record ? retrieveKnowledge(record.knowledge, resolution.query) : []);
+      const body: AssistantInput = record && !plan ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
         personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, resolution.query),
         projectData: selectedProjects(record.snapshot.projects ?? [], resolution.query), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
         knowledgeContext, knowledgeCatalog: knowledgeCatalog(record.knowledge, resolution.query), knowledgeCount: record.knowledge.length,
@@ -236,18 +239,19 @@ export async function buildApp(options: AppOptions = {}) {
         controller.signal.throwIfAborted();
         firstTextMs ??= Math.round(performance.now() - started);
         // Snapshots allow research fallback to replace a failed partial summary.
-        if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: text.slice(0, 6000) }); }
+        if (performance.now() - lastEmit >= 80) { lastEmit = performance.now(); emit({ type: 'text', text: conversationalReply(text.slice(0, 6000), request.body.message) }); }
       } : undefined;
-      const raw = command?.response ?? (snapshot ? projectCommand(request.body, snapshot, provider.name !== 'local') : undefined)
+      const raw = command?.response ?? plan?.reply ?? (snapshot ? projectCommand(request.body, snapshot, provider.name !== 'local') : undefined)
         ?? (resolution.clarification ? { message: resolution.clarification, command: 'conversation' as const, provider: 'local' as const } : undefined)
         ?? (record ? knowledgeReply(request.body.message, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
         ?? (record && resolution.knowledgeOnly ? knowledgeReply(resolution.query, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
         ?? await assistant.respond(body, controller.signal, progress);
       const { proposal: _proposal, knowledgeSources: _knowledgeSources, ...safe } = raw;
-      const change = 'projectChange' in raw ? validatedProjectChange(raw.projectChange, body) : undefined;
+      const change = 'projectChange' in raw ? validatedProjectChange(raw.projectChange, plan && snapshot ? { ...body, projectData: snapshot.projects } : body) : undefined;
       if ('projectChange' in safe) delete safe.projectChange;
-      const noteSources = knowledgeContext.length && (raw.provider !== 'local' || raw.command === 'knowledge') ? knowledgeContext : undefined;
-      const response: ChatResponse = { ...safe, message: safe.message.replace(/\[N\d+\]/g, reference => noteSources?.some(source => `[${source.reference}]` === reference) ? reference : ''), id: randomUUID(), createdAt: new Date().toISOString(), ...(noteSources ? { knowledgeSources: noteSources } : {}), ...(change && snapshot ? { proposal: projectProposals.create(change, snapshot) } : {}) };
+      const noteSources = !raw.webSearch && knowledgeContext.length && (raw.provider !== 'local' || raw.command === 'knowledge') ? knowledgeContext : undefined;
+      const text = safe.provider !== 'local' || safe.command === 'search' || safe.command === 'knowledge' ? conversationalReply(safe.message, request.body.message) : safe.message;
+      const response: ChatResponse = { ...safe, message: text.replace(/\[N\d+\]/g, reference => noteSources?.some(source => `[${source.reference}]` === reference) ? reference : ''), id: randomUUID(), createdAt: new Date().toISOString(), ...(noteSources ? { knowledgeSources: noteSources } : {}), ...(change && snapshot ? { proposal: projectProposals.create(change, snapshot) } : {}) };
       controller.signal.throwIfAborted();
       const answered = performance.now();
       if (personal && snapshot) {

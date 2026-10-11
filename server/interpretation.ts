@@ -1,6 +1,7 @@
 import type { ChatRequest, WebSearchInfo } from '../shared/contracts.js';
 import { searchQuery } from '../shared/search.js';
 import { validChange, type PersonalProject, type ProjectChange } from '../shared/projects.js';
+import { personalReferenceQuestion } from '../shared/dialogue.js';
 import { knowledgeQuestion, type KnowledgeSource } from '../shared/knowledge.js';
 
 export interface AssistantInput extends ChatRequest {
@@ -46,7 +47,7 @@ export const SEARCH_TOOL = { type: 'function', function: {
 export const INTERPRETATION_PROMPT = `\nInterprete a intenção antes de responder. Para conversa, explicações estáveis e informações pessoais, responda normalmente usando o contexto e os dados pessoais disponíveis. Para notícias, informações atuais, links/fontes ou pedidos de pesquisa, solicite search_web; não responda por memória como se tivesse pesquisado. Você pode propor até três consultas complementares, curtas e específicas. Use somente assuntos públicos presentes no pedido atual ou no último assunto público de pesquisa fornecido, sem copiar memórias, notas, nomes ou dados privados para consultas. Reformule referências como "e sobre isso hoje?" usando esse assunto público. Se a referência for pessoal ou ambígua, responda ou peça esclarecimento, sem pesquisar. Não chame ferramentas para salvar, editar ou apagar dados. Nunca produza URLs como ferramentas. O servidor valida e executa a pesquisa; não afirme que já foi realizada antes de receber resultados.`;
 const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 export function personalQuestion(text: string) {
-  return knowledgeQuestion(text) || /\b(?:meu (?:nome|cpf|endereco|telefone)|minha (?:senha|conta)|(?:meus?|minhas?) (?:(?:principais|atuais|futuros?|futuras?|proximos?|proximas?|maiores|novos?|novas?|antigos?|antigas?|pessoais|profissionais|de longo prazo|de curto prazo) ){0,3}(?:memorias?|notas?|anotacoes?|preferencias?|projetos?|tarefas?|pendencias?|prioridades?|objetivos?|metas?|planos?|estudos?|rotina|habitos?|interesses?|ambicoes|conquistas?)|o que (?:eu )?(?:anotei|salvei)|sobre mim|voce lembra de mim)\b/.test(normalize(text));
+  return knowledgeQuestion(text) || personalReferenceQuestion(text);
 }
 export const PROJECT_TOOL = { type: 'function', function: {
   name: 'propose_project_change', description: 'Propõe criar um projeto com etapas, adicionar tarefas ou concluir uma tarefa existente. Nada é salvo antes de o dono revisar e confirmar na interface. Use para pedidos de planos pessoais e projetos/tarefas. Não pesquisa na internet.',

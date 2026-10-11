@@ -1,7 +1,27 @@
 import type { ChatRequest, SearchSource, WebSearchInfo } from './contracts.js';
+import { normalizeQuestion, personalReferenceQuestion } from './dialogue.js';
 
 export const MAX_SEARCH_QUERY = 300;
 export const MAX_SEARCH_SOURCES = 5;
+
+export function automaticSearchQuery(message: string): string | undefined {
+  // Private requests and local actions never become public searches, including
+  // on Pages where the full server-side interpretation is unavailable.
+  if (personalReferenceQuestion(message) || /^(?:anote|anotar|nota|apagar notas)\b/.test(normalizeQuestion(message))) return;
+  const explicit = searchQuery({ message });
+  if (explicit !== undefined) return explicit;
+  const text = normalizeQuestion(message);
+  // A continuation needs the server's verified conversation subject. Never
+  // search an isolated pronoun, or accidentally copy private history into it.
+  if (/\b(?:isso|nisso|disso|desse|dessa|ele|ela)\b/.test(text)) return;
+  if (/^(?:o que (?:e|sao)|explique (?:o conceito|a historia)|como funciona)\b/.test(text)
+    && !/\b(?:hoje|agora|atualmente|atual|atuais|mais recente|ultima versao)\b/.test(text)) return;
+  const current = /\b(?:noticias?|novidades|manchetes|cotacao|preco|precos|quanto custa|clima|previsao do tempo|temperatura|ultim[oa]s?|mais recente|atualmente|atualizacoes)\b/.test(text)
+    || /\b(?:quem (?:e|esta)|o que mudou|como esta|qual (?:e )?(?:a |o )?(?:situacao|versao|presidente|governador))\b.*\b(?:hoje|agora|atual|atuais)\b/.test(text)
+    || /\b(?:links?|fontes|referencias) (?:sobre|de|para)\b/.test(text);
+  return current ? message.trim().replace(/^(?:oi|ol[aá]|bom dia|boa tarde|boa noite)[,.:!]?\s+/i, '')
+    .replace(/^jarvis[,.:!]?\s+/i, '').replace(/^por favor[,.:!]?\s+/i, '') : undefined;
+}
 
 export function searchQuery(request: Pick<ChatRequest, 'message' | 'webSearch'>): string | undefined {
   const text = request.message.trim()

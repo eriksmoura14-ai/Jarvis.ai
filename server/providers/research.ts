@@ -1,9 +1,10 @@
 import type { AssistantProvider, ChatResponse } from '../../shared/contracts.js';
-import { MAX_SEARCH_QUERY, MAX_SEARCH_SOURCES, searchQuery } from '../../shared/search.js';
+import { MAX_SEARCH_QUERY, MAX_SEARCH_SOURCES, searchQuery, automaticSearchQuery } from '../../shared/search.js';
 import { SearchError, WebSearch, type SearchResults } from '../search.js';
 import { searchIntent } from '../search-intent.js';
 import { personalQuestion, validatedPlan, type AssistantInput, type SearchPlan } from '../interpretation.js';
 import { HybridProvider } from './hybrid.js';
+import { ModelError } from './model.js';
 import type { ProjectChange } from '../../shared/projects.js';
 
 export class ResearchProvider implements AssistantProvider {
@@ -12,12 +13,12 @@ export class ResearchProvider implements AssistantProvider {
   private attempts: number[] = [];
   constructor(private assistant: AssistantProvider, private search: WebSearch) { this.name = assistant.name; }
   async respond(request: AssistantInput, signal?: AbortSignal, onText?: (text: string) => void): Promise<Omit<ChatResponse, 'id' | 'createdAt'> & { projectChange?: ProjectChange }> {
-    // Personal actions win over a sticky web checkbox. Models cannot mutate personal data.
+    // Personal actions stay private. Models can only propose mutations.
     const commandText = request.message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
     const localPersonal = /^(?:anot(?:ar|e)|nota)\s+|^(?:apagar notas|notas|minhas notas|listar notas)[.!?]*$/i.test(commandText);
     const projectIntent = !!request.projectData && /^(?:jarvis[,.:!]?\s+)?(?:crie|criar|organize|organizar|monte|montar|planeje|planejar|conclui|terminei|adicione|adicionar)\b/i.test(commandText) && /\b(?:projetos?|tarefas?|planos?|etapas?)\b/i.test(commandText);
     if (localPersonal || personalQuestion(request.message) || projectIntent || request.knowledgeOnly || request.privateOnly) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
-    const explicit = searchQuery({ ...request, webSearch: false });
+    const explicit = automaticSearchQuery(request.message);
     let plan: SearchPlan | undefined;
     if (explicit !== undefined || request.webSearch) {
       const query = explicit ?? searchQuery(request)!;
@@ -29,8 +30,9 @@ export class ResearchProvider implements AssistantProvider {
         try {
           const proposal = await this.assistant.planResearch(request, signal);
           if (proposal.projectChange) return proposal;
+          if ('searchRejected' in proposal) return { message: proposal.message, command: proposal.command, provider: proposal.provider };
           if ('searchPlan' in proposal) plan = validatedPlan(proposal.searchPlan, request) ?? plan;
-        } catch { signal?.throwIfAborted(); }
+        } catch (error) { signal?.throwIfAborted(); if (error instanceof ModelError && error.rejectedTool) throw error; }
       }
     } else {
       const reply = await this.assistant.respond(request, signal, onText);
@@ -83,7 +85,7 @@ export class ResearchProvider implements AssistantProvider {
       }
       const engines = [...new Set(found.map(result => result.info.engine))];
       const results: SearchResults = { sources, info: { query: plan.queries[0], engine: engines[0], searchedAt: new Date().toISOString(), queries: tried, engines, news: plan.news } };
-      let message = `Resultados para “${results.info.query}”:\n\n${sources.map((source, index) => `[${index + 1}] ${source.title}${source.snippet ? `\n${source.snippet}` : ''}`).join('\n\n')}`;
+      let message = 'Encontrei estas informações nas fontes da pesquisa: ' + sources.slice(0, 3).map((source, index) => `${(source.snippet || source.title).slice(0, 350)} [${index + 1}]`).join(' ') + '\n\nEste é um resumo dos trechos disponíveis; não li as páginas completas.';
       let provider: ChatResponse['provider'] = 'local';
       if (this.assistant instanceof HybridProvider) {
         try {
@@ -91,7 +93,7 @@ export class ResearchProvider implements AssistantProvider {
           message = summary.message; provider = summary.provider;
         } catch {
           signal?.throwIfAborted();
-          message = 'Encontrei fontes na web, mas o resumo por IA está indisponível. Veja os resultados:\n\n' + message;
+          message = 'O resumo por IA está indisponível neste momento. Vou usar os trechos encontrados.\n\n' + message;
           onText?.(message.slice(0, 6000));
         }
       }

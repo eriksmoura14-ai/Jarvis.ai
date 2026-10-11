@@ -47,11 +47,12 @@ export function Projects({ snapshot, onRefresh }: { snapshot: PersonalSnapshot; 
   </div>;
 }
 
-export function ProjectPriorities({ snapshot, now, onOpen }: { snapshot: PersonalSnapshot; now: Date; onOpen: () => void }) {
+export function ProjectPriorities({ snapshot, now, onOpen, onPlan, busy }: { snapshot: PersonalSnapshot; now: Date; onOpen: () => void; onPlan: () => void; busy: boolean }) {
   const day = localDay(now, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
   const next = priorities(snapshot.projects ?? [], day);
   return <section className="project-priorities" aria-label="Suas prioridades">
     <button data-gamepad className="secondary-button" onClick={onOpen}>Projetos e tarefas</button>
+    <button data-gamepad className="secondary-button" disabled={busy} onClick={onPlan}>Planejar meu dia</button>
     {next.length ? <><p>Próximas tarefas · {next.length} pendente{next.length === 1 ? '' : 's'}</p><ul>{next.slice(0, 3).map(({ project, task, when }) => <li key={task.id}><strong>{task.title}</strong><small>{project.title} · {when}</small></li>)}</ul></> : <p>{snapshot.projects?.length ? 'Nenhuma tarefa pendente nos projetos ativos.' : 'Crie seu primeiro projeto ou peça ao JARVIS um plano.'}</p>}
   </section>;
 }

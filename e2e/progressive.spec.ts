@@ -228,7 +228,7 @@ test('recepção pessoal, notícias opcionais com fontes e uma consulta automát
   let calls = 0;
   await page.route('**/api/chat', route => {
     calls++;
-    expect(route.request().postDataJSON()).toMatchObject({ message: 'pesquise últimas notícias sobre astronomia', webSearch: true });
+    expect(route.request().postDataJSON()).toMatchObject({ message: 'pesquise últimas notícias sobre astronomia' });
     const reply = { ...result('Encontrei uma fonte sobre astronomia. Confira a data no link.'), command: 'search', provider: 'local', sources: [{ title: 'NASA', url: 'https://www.nasa.gov/', snippet: 'Astronomia e pesquisa.' }], webSearch: { query: 'últimas notícias sobre astronomia', engine: 'bing', searchedAt: new Date().toISOString() } };
     snapshot.history = [{ id: reply.id, role: 'assistant', content: reply.message, createdAt: reply.createdAt, sources: reply.sources, webSearch: reply.webSearch }];
     return route.fulfill({ json: reply });

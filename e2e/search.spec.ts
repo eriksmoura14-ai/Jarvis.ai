@@ -12,12 +12,12 @@ test('pesquisa explícita mostra links seguros no chat e restaura fontes no hist
   let request: { webSearch?: boolean; message: string } | undefined;
   await page.route('**/api/chat', route => { request = route.request().postDataJSON(); return route.fulfill({ json: response }); });
   await page.goto('/');
-  await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).toBeEnabled();
-  await page.getByRole('checkbox', { name: 'Pesquisar na web' }).check();
-  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('React');
+  await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('pesquise React');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toBeVisible();
-  expect(request).toMatchObject({ message: 'React', webSearch: true });
+  expect(request).toMatchObject({ message: 'pesquise React' });
+  expect(request?.webSearch).toBeUndefined();
   const link = page.getByRole('link', { name: /Documentação oficial do React/ });
   await expect(link).toHaveAttribute('href', 'https://react.dev/learn');
   await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
@@ -106,7 +106,7 @@ test('pesquisa automática mostra consultas complementares e restaura os detalhe
   await page.route('**/api/chat', route => { request = route.request().postDataJSON(); return route.fulfill({ json: { ...response, webSearch: { ...response.webSearch, queries: ['React', 'TypeScript'], engines: ['bing', 'duckduckgo'] } } }); });
   await page.goto('/');
   await expect(page.getByText(/Pesquisa automática ativa/)).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).toHaveCount(0);
   await page.getByRole('textbox').fill('Compare as novidades de React e TypeScript');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   expect(request?.webSearch).not.toBe(true);
