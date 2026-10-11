@@ -24,7 +24,7 @@ export function Projects({ snapshot, onRefresh }: { snapshot: PersonalSnapshot; 
     <form aria-label="Criar projeto" onSubmit={create}>
       <label htmlFor="project-title">Nome do projeto</label><input data-gamepad id="project-title" required maxLength={100} value={title} disabled={busy} onChange={event => setTitle(event.target.value)} placeholder="Estudar inglês" />
       <label htmlFor="project-description">Objetivo do projeto</label><textarea data-gamepad id="project-description" maxLength={1000} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} placeholder="O que você quer alcançar?" />
-      <label htmlFor="project-steps">Etapas iniciais (uma por linha)</label><textarea data-gamepad id="project-steps" maxLength={3020} value={steps} disabled={busy} onChange={event => setSteps(event.target.value)} placeholder="Estudar vocabulário\nPraticar conversação" />
+      <label htmlFor="project-steps">Etapas iniciais (uma por linha)</label><textarea data-gamepad id="project-steps" maxLength={3020} value={steps} disabled={busy} onChange={event => setSteps(event.target.value)} placeholder={"Estudar vocabulário\nPraticar conversação"} />
       <button data-gamepad className="primary-button" disabled={busy || !title.trim() || projects.length >= 20}>Criar projeto</button>
     </form>
     {!projects.length && <p>Nenhum projeto salvo ainda.</p>}

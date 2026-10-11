@@ -10,6 +10,9 @@
 .project-card li > span { min-width: 0; flex: 1; }
 .project-card small, .project-priorities small, .project-proposal small { display: block; color: #8fa9bd; font-size: .75rem; }
 .project-card progress { width: 100%; accent-color: #76c9ff; }
+.project-card progress::-webkit-progress-bar { background: #21374d; border-radius: 4px; }
+.project-card progress::-webkit-progress-value { background: #76c9ff; border-radius: 4px; }
+.project-card progress::-moz-progress-bar { background: #76c9ff; border-radius: 4px; }
 .project-card > button { margin: .4rem .4rem .4rem 0; }
 .project-progress, .project-priorities p { font-size: .8rem; color: #9cb5c8; margin: .6rem 0; }
 .task-done { text-decoration: line-through; color: #88a393; }
