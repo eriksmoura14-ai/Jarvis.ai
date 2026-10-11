@@ -25,15 +25,34 @@ export class HybridProvider implements AssistantProvider {
     return this.respondModel(request, signal, undefined, undefined, true);
   }
   private async respondModel(request: AssistantInput, signal?: AbortSignal, research?: SearchResults, onText?: (text: string) => void, interpret = false): Promise<Awaited<ReturnType<ModelProvider['respond']>>> {
-    const now = Date.now();
-    this.requests = this.requests.filter(time => now - time < 60_000);
-    if (this.active >= 2 || this.requests.length >= 6) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
-    this.requests.push(now);
+    if (this.active >= 2) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
     this.active++;
     try {
-      if (!await this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
-      signal?.throwIfAborted();
-      const response = await this.model.respond(request, signal, onText, research, interpret);
+      let recovered = false;
+      const infer = async (input: AssistantInput, results?: SearchResults, tools = false) => {
+        const run = async () => {
+          signal?.throwIfAborted();
+          const now = Date.now();
+          this.requests = this.requests.filter(time => now - time < 60_000);
+          if (this.requests.length >= 6) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
+          this.requests.push(now);
+          if (!await this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
+          signal?.throwIfAborted();
+          const result = await this.model.respond(input, signal, recovered ? undefined : onText, results, tools);
+          if (recovered && result.message) onText?.(result.message);
+          return result;
+        };
+        try { return await run(); }
+        catch (error) {
+          // One JSON recovery per response, including a subsequent read_notes
+          // pass. Keep the tools and their validators; never execute failed tool
+          // text or accept an unfinished stream as a completed answer.
+          if (recovered || !onText || signal?.aborted || !(error instanceof ModelError) || !error.retryWithoutStream) throw error;
+          recovered = true;
+          return run();
+        }
+      };
+      const response = await infer(request, research, interpret);
       if (!('knowledgePlan' in response)) return response;
       signal?.throwIfAborted();
       const plan = validatedKnowledgePlan(response.knowledgePlan, request);
@@ -41,7 +60,7 @@ export class HybridProvider implements AssistantProvider {
       const knowledgeContext = request.readKnowledge(plan);
       // Count the second inference against the same minute/day budget. No tool
       // is offered on this pass, so a model cannot loop or research private text.
-      return await this.respondModel({ ...request, knowledgeContext, knowledgeOnly: true, privateOnly: true, readKnowledge: undefined }, signal, undefined, onText, false);
+      return await infer({ ...request, knowledgeContext, knowledgeOnly: true, privateOnly: true, readKnowledge: undefined });
     }
     finally { this.active--; }
   }

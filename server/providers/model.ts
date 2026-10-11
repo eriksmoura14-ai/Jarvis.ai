@@ -7,7 +7,24 @@ import { localDay } from '../../shared/projects.js';
 export type AIConfig = { provider: 'groq'; model: string; apiKey: string }
   | { provider: 'ollama'; model: string; baseURL: string };
 export class ModelError extends Error {
-  constructor(message: string, public readonly statusCode = 503) { super(message); }
+  constructor(message: string, public readonly statusCode = 503, public readonly retryWithoutStream = false) { super(message); }
+}
+// Never forward provider messages or failed_generation: they can include keys,
+// personal notes and unvalidated tool calls. Recognize only known error labels.
+function providerError(value: unknown, status = 503): ModelError {
+  const error = value && typeof value === 'object' ? value as { code?: unknown; type?: unknown } : {};
+  const labels = [error.code, error.type];
+  if (status === 429 || labels.some(label => ['rate_limit_exceeded', 'rate_limit_error', 'tokens_limit_reached', 'insufficient_quota'].includes(String(label)))) {
+    return new ModelError('A cota do provedor de IA foi atingida. Aguarde um minuto ou use os comandos locais.', 429);
+  }
+  if ([401, 403].includes(status) || labels.some(label => ['invalid_api_key', 'authentication_error', 'permission_error'].includes(String(label)))) {
+    return new ModelError('O provedor recusou a conexão. Confira a chave e as permissões no backend.');
+  }
+  if (labels.includes('tool_use_failed')) return new ModelError('O modelo não conseguiu montar a consulta às ferramentas. Diga o assunto ou o título da nota para eu tentar novamente.', 503, true);
+  if (labels.includes('context_length_exceeded')) return new ModelError('O contexto ultrapassou o limite desse modelo. Faça uma pergunta mais específica ou reinicie a conversa.');
+  if (status === 404 || labels.includes('model_not_found') || labels.includes('model_decommissioned')) return new ModelError('O modelo não está disponível. Confira AI_MODEL no backend e, no Ollama, instale o modelo.');
+  if (status === 400) return new ModelError('O provedor não conseguiu processar este pedido. Tente uma pergunta mais específica ou confira o modelo no backend.');
+  return new ModelError('O provedor de IA interrompeu a resposta. Tente novamente em instantes.', 503, true);
 }
 export function readAIConfig(env: NodeJS.ProcessEnv): AIConfig | undefined {
   const provider = env.AI_PROVIDER?.trim() || 'local';
@@ -95,11 +112,9 @@ export class ModelProvider implements AssistantProvider {
             : { options: { temperature: 0.6, num_predict: 700, num_ctx: 4096 } }) }),
       });
       if (!response.ok) {
-        await response.body?.cancel();
-        if (response.status === 429) throw new ModelError('A cota do provedor de IA foi atingida. Aguarde ou use os comandos locais.', 429);
-        if ([401, 403].includes(response.status)) throw new ModelError('O provedor recusou a conexão. Confira a chave e as permissões no backend.');
-        if ([400, 404].includes(response.status)) throw new ModelError('O modelo não está disponível. Confira AI_MODEL no backend e, no Ollama, instale o modelo.');
-        throw new ModelError('O provedor de IA está indisponível. Tente novamente mais tarde.');
+        let error: unknown;
+        try { error = (await boundedJSON(response) as { error?: unknown })?.error; } catch { /* Keep only safe status-based information. */ }
+        throw providerError(error, response.status);
       }
       let text: unknown; let cut = false;
       const calls: { name: string; arguments: string }[] = [];
@@ -131,7 +146,7 @@ export class ModelProvider implements AssistantProvider {
           const payload = groq ? line.slice(5).trim() : line;
           if (payload === '[DONE]') { ended = true; break; }
           const data = JSON.parse(payload) as { error?: unknown; choices?: { delta?: { content?: unknown; tool_calls?: unknown }; finish_reason?: string | null }[]; message?: { content?: unknown; tool_calls?: unknown }; done?: boolean; done_reason?: string };
-          if (data.error) throw new ModelError('O provedor interrompeu a resposta. Tente novamente.');
+          if (data.error) throw providerError(data.error);
           const content = groq ? data.choices?.[0]?.delta?.content : data.message?.content;
           collectTools(groq ? data.choices?.[0]?.delta?.tool_calls : data.message?.tool_calls, groq);
           if (content !== undefined && content !== null && typeof content !== 'string') throw new ModelError('O modelo retornou texto inválido.');
@@ -143,10 +158,11 @@ export class ModelProvider implements AssistantProvider {
           if (groq && data.choices?.[0]?.finish_reason) { finished = true; cut ||= data.choices[0].finish_reason === 'length'; }
           if (!groq && data.done === true) { ended = true; cut ||= data.done_reason === 'length'; break; }
         }
-        if (!ended || (groq && !finished)) throw new ModelError('A resposta da IA foi interrompida. Tente novamente.');
+        if (!ended || (groq && !finished)) throw new ModelError('A resposta da IA foi interrompida. Tente novamente.', 503, true);
         text = accumulated;
       } else {
-        const data = await boundedJSON(response) as { choices?: { message?: { content?: unknown; tool_calls?: unknown }; finish_reason?: string }[]; message?: { content?: unknown; tool_calls?: unknown } };
+        const data = await boundedJSON(response) as { error?: unknown; choices?: { message?: { content?: unknown; tool_calls?: unknown }; finish_reason?: string }[]; message?: { content?: unknown; tool_calls?: unknown } };
+        if (data?.error) throw providerError(data.error);
         text = groq ? data?.choices?.[0]?.message?.content : data?.message?.content;
         collectTools(groq ? data.choices?.[0]?.message?.tool_calls : data.message?.tool_calls, false);
         cut = data.choices?.[0]?.finish_reason === 'length';
@@ -175,7 +191,8 @@ export class ModelProvider implements AssistantProvider {
     } catch (error) {
       if (error instanceof ModelError) throw error;
       // Provider errors can contain request headers or keys. Never propagate them to logs or clients.
-      throw new ModelError(controller.signal.aborted ? 'A IA demorou para responder. Tente uma pergunta mais curta.' : 'Não foi possível conectar ao modelo de IA. Confira a conexão do backend.');
+      throw new ModelError(controller.signal.aborted ? 'A IA demorou para responder. Tente uma pergunta mais curta.' : 'Não foi possível conectar ao modelo de IA. Confira a conexão do backend.', 503,
+        !!onText && !controller.signal.aborted && error instanceof TypeError);
     } finally { clearTimeout(timeout); signal?.removeEventListener('abort', cancel); }
   }
 }
