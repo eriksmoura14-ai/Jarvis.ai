@@ -58,7 +58,7 @@ atualize as páginas depois de trocar a variável.
 A leitura automática do chat vem ligada nesta atualização. A antiga preferência
 v1 gravava `false` mesmo sem uma escolha explícita; v2 inicia a leitura uma vez
 e preserva as próximas escolhas, inclusive desligar. Desative em **Preferências
-→ Ler respostas automaticamente no chat**. No modo voz, o botão de som controla
+→ Ler respostas automaticamente no chat**. No modo voz, **Preferências → Som no modo voz** controla
 a leitura. Somente a resposta final é falada; rascunhos e erros da IA não são.
 
 **Estilo de fala → JARVIS · português brasileiro, calmo e preciso** vem

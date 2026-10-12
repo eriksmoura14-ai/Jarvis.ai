@@ -1,3 +1,4 @@
+import { history } from '../e2e/ui';
 import { expect, test, type Page } from '@playwright/test';
 
 const password = 'fixture-local-personal-123';
@@ -65,15 +66,15 @@ test('outro aparelho recebe história e notas; limpar sincroniza e preserva nota
     const nameReply = await second.request.post('/api/chat', { headers: client, data: { message: 'qual é meu nome', sessionId: crypto.randomUUID(), timeZone: 'America/Sao_Paulo' } });
     expect((await nameReply.json()).message).toBe('Seu nome é Segundo aparelho, senhor.');
     await second.getByRole('button', { name: 'Fechar janela' }).click();
-    await second.getByRole('button', { name: 'Abrir histórico', exact: true }).click();
-    await expect(second.getByText('anotar lembrar consulta', { exact: true })).toBeVisible();
+    await history(second);
+    await expect(second.getByRole('dialog').getByText('anotar lembrar consulta', { exact: true })).toBeVisible();
     await second.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
     await second.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
     await expect(second.getByRole('dialog')).toHaveCount(0);
     const state = await (await page.request.get('/api/personal/data')).json();
     expect(state.history).toHaveLength(0); expect(state.notes.some((note: { content: string }) => note.content === 'lembrar consulta')).toBe(true);
     expect(state.memories.some((memory: { content: string }) => memory.content === 'meu nome é Segundo aparelho')).toBe(true);
-    await page.reload(); await page.getByRole('button', { name: 'Abrir histórico', exact: true }).click();
+    await page.reload(); await history(page);
     await expect(page.getByText('anotar lembrar consulta', { exact: true })).toHaveCount(0);
   } finally { await secondContext.close(); }
 });

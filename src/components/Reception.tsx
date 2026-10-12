@@ -5,6 +5,7 @@ import { newsDay } from '../lib/reception';
 interface Props {
   preferences: ReceptionPreferences; greeting: string; enabled: boolean; busy: boolean;
   onNews: () => Promise<boolean>; onSpeak: () => void; speechSupported: boolean;
+  headless?: boolean;
 }
 export function Reception(props: Props) {
   const attempted = useRef(false);
@@ -35,7 +36,7 @@ export function Reception(props: Props) {
     document.addEventListener('visibilitychange', schedule);
     return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', schedule); };
   }, [props.enabled, props.preferences.autoNews, props.busy]);
-  if (!props.preferences.greeting) return null;
+  if (props.headless || !props.preferences.greeting) return null;
   return <section className="reception" aria-label="Recepção pessoal">
     <p>{props.greeting}</p>
     <div><button data-gamepad className="secondary-button" disabled={props.busy || !props.speechSupported} onClick={props.onSpeak}>Ouvir saudação</button>

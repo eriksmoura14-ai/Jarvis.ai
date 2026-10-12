@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JARVIS — referência Moderna</title><style>body{margin:0;padding:24px;background:#080a11} .reference-frame{max-width:1024px;margin:auto} button{cursor:pointer} @media(max-width:600px){body{padding:0}}
+
+
+ #jarvis-moderno{font-family:Inter,system-ui,sans-serif;font-size:13px;font-weight:400;color:#e4e8f5;background:#0c0e16;display:grid;grid-template-columns:190px minmax(0,1fr);min-height:650px;border-radius:16px;overflow:hidden;color-scheme:dark}
+ #jarvis-moderno *{box-sizing:border-box}#jarvis-moderno button,#jarvis-moderno input{font:inherit}#jarvis-moderno button{color:inherit}#jarvis-moderno button:focus-visible,#jarvis-moderno input:focus-visible{outline:2px solid #8cb5ff;outline-offset:3px}
+ #jarvis-moderno button{display:flex;align-items:center;gap:10px}#jarvis-moderno svg{flex-shrink:0;width:16px;height:16px}
+ #jarvis-moderno .jd-sidebar{background:#10121c;padding:28px 16px 18px;border-right:1px solid #222531;display:flex;flex-direction:column;gap:4px}
+ #jarvis-moderno .jd-brand{font-size:16px;letter-spacing:.19em;font-weight:500;display:flex;gap:10px;align-items:center;padding:0 9px 28px}
+ #jarvis-moderno .jd-brand-dot{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e0f4ff,#7caffd 40%,#655ac8 85%);box-shadow:0 0 14px #7099ff50}
+ #jarvis-moderno .jd-new{background:#1b1f2e;border:1px solid #31364b;border-radius:10px;padding:12px;margin-bottom:20px;min-height:44px;text-align:left}
+ #jarvis-moderno nav{display:flex;flex-direction:column;gap:4px}#jarvis-moderno nav button{border:0;background:transparent;color:#929bb3;padding:11px;border-radius:9px;min-height:44px;text-align:left}#jarvis-moderno nav button[aria-pressed="true"]{background:#222a41;color:#d5e3ff}
+ #jarvis-moderno .jd-section-name{font-size:11px;color:#747f98;letter-spacing:.12em;margin:30px 10px 9px}#jarvis-moderno .jd-project{background:transparent;border:0;text-align:left;padding:12px 10px;color:#a0aac0;min-height:44px;font-size:12px}#jarvis-moderno .jd-dot{width:6px;height:6px;background:#67789e;border-radius:50%}
+ #jarvis-moderno .jd-profile{margin-top:auto;display:flex;align-items:center;gap:10px;padding:30px 6px 0;font-size:12px}#jarvis-moderno .jd-profile small{display:block;color:#7f89a2;font-size:11px;margin-top:4px}#jarvis-moderno .jd-avatar{width:32px;height:32px;background:#262e47;border-radius:10px;display:grid;place-items:center;color:#bccfff}
+ #jarvis-moderno main{min-width:0;background:radial-gradient(ellipse at 50% 35%,#15192b 0%,#0c0e16 55%)}
+ #jarvis-moderno .jd-top{min-height:66px;border-bottom:1px solid #202431;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:11px}#jarvis-moderno .jd-crumb{color:#838ba1}#jarvis-moderno .jd-slash{color:#484f65;margin:0 12px}#jarvis-moderno .jd-preview{color:#a1adca;border:1px solid #30394e;border-radius:20px;padding:5px 10px;white-space:nowrap}
+ #jarvis-moderno .jd-main{padding:0 28px 22px;max-width:850px;margin:auto}#jarvis-moderno .jd-orb{position:relative;max-width:470px;margin:auto}#jarvis-moderno canvas{width:100%;height:285px;display:block}#jarvis-moderno .jp-pause{position:absolute;right:0;bottom:3px;color:#7f8ba5;background:none;border:0;min-height:44px;padding:8px;font-size:11px}
+ #jarvis-moderno .jp-status{display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;letter-spacing:.03em;color:#9eb3de;margin:0 0 20px}#jarvis-moderno .jp-status:before{content:'';width:5px;height:5px;border-radius:50%;background:#97baff;box-shadow:0 0 10px #97baff55}
+ #jarvis-moderno .jd-welcome{text-align:center}#jarvis-moderno h2{font-size:26px;font-weight:500;letter-spacing:-.035em;margin:0 0 10px}#jarvis-moderno .jd-welcome p{font-size:13px;color:#8893ab;margin:0 0 26px}
+ #jarvis-moderno .jd-content{max-width:650px;margin:0 auto 24px}#jarvis-moderno .jd-suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}#jarvis-moderno .jd-suggestions button{font-size:11px;color:#aab5ce;border:1px solid #2b3143;background:#141925;border-radius:10px;padding:11px;min-height:44px}#jarvis-moderno .jd-suggestions button:hover{background:#202a40}
+ #jarvis-moderno .jd-composer{background:#171b28;border:1px solid #343b51;border-radius:17px;padding:16px 16px 10px;max-width:650px;margin:auto;box-shadow:0 10px 32px #00000020}#jarvis-moderno input{display:block;width:100%;background:transparent;border:0;color:#e2e9f8;min-width:0;padding:4px 0 14px;font-size:13px}#jarvis-moderno input::placeholder{color:#7e88a2}#jarvis-moderno .jd-compose-bottom{display:flex;justify-content:space-between;gap:10px;align-items:center}#jarvis-moderno .jd-compose-bottom>span{display:flex;gap:7px;align-items:center;color:#72809a;font-size:11px}#jarvis-moderno .jd-compose-bottom>div{display:flex;gap:7px}#jarvis-moderno .jd-mic,#jarvis-moderno .jd-send{border:0;border-radius:10px;width:44px;height:44px;justify-content:center}#jarvis-moderno .jd-mic{background:#252c3e;color:#acb9d4}#jarvis-moderno .jd-send{background:#c4d8ff;color:#17243d}#jarvis-moderno .jd-disclosure{text-align:center;font-size:11px;color:#64718b;margin-top:13px}
+ #jarvis-moderno .jd-chat{padding:14px 16px;background:#161c2a;border:1px solid #2a344b;border-radius:12px;font-size:12px;color:#b8c6df;line-height:1.6}#jarvis-moderno .jd-chat strong{font-weight:500;color:#e3ecff;display:block;margin-bottom:6px}#jarvis-moderno .jd-list{display:grid;gap:8px}#jarvis-moderno .jd-list span{padding:12px 14px;background:#171c2a;border-radius:9px;color:#adbad3;font-size:12px}
+ #jarvis-moderno .jd-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+ @media(max-width:680px){#jarvis-moderno{grid-template-columns:60px minmax(0,1fr)}#jarvis-moderno .jd-sidebar{padding:26px 8px}#jarvis-moderno .jd-brand{font-size:0;padding:0 0 26px;justify-content:center;gap:0}#jarvis-moderno .jd-brand-dot{width:18px;height:18px}#jarvis-moderno .jd-new,#jarvis-moderno nav button{font-size:0;justify-content:center;padding:10px;gap:0}#jarvis-moderno .jd-new svg,#jarvis-moderno nav svg{width:18px;height:18px}#jarvis-moderno .jd-section-name,#jarvis-moderno .jd-project,#jarvis-moderno .jd-profile{display:none}#jarvis-moderno .jd-main{padding:0 14px 22px}#jarvis-moderno .jd-top{padding:16px 14px}.jd-compose-bottom>span{display:none!important}#jarvis-moderno .jd-compose-bottom{justify-content:flex-end}#jarvis-moderno h2{font-size:23px}#jarvis-moderno .jd-crumb,#jarvis-moderno .jd-slash{display:none}}
+ @media(max-width:400px){#jarvis-moderno canvas{height:240px}#jarvis-moderno .jd-top{font-size:11px}#jarvis-moderno .jd-preview{padding:4px 7px}#jarvis-moderno .jd-suggestions{gap:6px}#jarvis-moderno .jd-suggestions button{width:100%;justify-content:center}#jarvis-moderno input{font-size:16px}}
+
+
+#jarvis-moderno{min-height:730px}</style></head><body>
+<!-- Interface original de referência aprovada por Erik. Ações simuladas; integrar ao aplicativo real. Ícones Lucide 1.8.0.
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+—-
+
+The following Lucide icons are derived from the Feather project:
+
+airplay, alert-circle, alert-octagon, alert-triangle, aperture, arrow-down-circle, arrow-down-left, arrow-down-right, arrow-down, arrow-left-circle, arrow-left, arrow-right-circle, arrow-right, arrow-up-circle, arrow-up-left, arrow-up-right, arrow-up, at-sign, calendar, cast, check, chevron-down, chevron-left, chevron-right, chevron-up, chevrons-down, chevrons-left, chevrons-right, chevrons-up, circle, clipboard, clock, code, columns, command, compass, corner-down-left, corner-down-right, corner-left-down, corner-left-up, corner-right-down, corner-right-up, corner-up-left, corner-up-right, crosshair, database, divide-circle, divide-square, dollar-sign, download, external-link, feather, frown, hash, headphones, help-circle, info, italic, key, layout, life-buoy, link-2, link, loader, lock, log-in, log-out, maximize, meh, minimize, minimize-2, minus-circle, minus-square, minus, monitor, moon, more-horizontal, more-vertical, move, music, navigation-2, navigation, octagon, pause-circle, percent, plus-circle, plus-square, plus, power, radio, rss, search, server, share, shopping-bag, sidebar, smartphone, smile, square, table-2, tablet, target, terminal, trash-2, trash, triangle, tv, type, upload, x-circle, x-octagon, x-square, x, zoom-in, zoom-out
+
+The MIT License (MIT) (for the icons listed above)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-->
+<div class="reference-frame"><div id="jarvis-moderno">
+ <aside class="jd-sidebar">
+  <div class="jd-brand"><span class="jd-brand-dot"></span>JARVIS</div>
+  <button type="button" aria-label="Nova conversa" class="jd-new cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>Nova conversa</button>
+  <nav aria-label="Menu do JARVIS">
+   <button type="button" aria-label="Conversa" data-view="Conversa" aria-pressed="true" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"></path></svg>Conversa</button>
+   <button type="button" aria-label="Projetos" data-view="Projetos" aria-pressed="false" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>Projetos</button>
+   <button type="button" aria-label="Tarefas" data-view="Tarefas" aria-pressed="false" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 7 17l-5-5"></path><path d="m22 10-7.5 7.5L13 16"></path></svg>Tarefas</button>
+   <button type="button" aria-label="Memória" data-view="Memória" aria-pressed="false" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 18V5"></path><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"></path><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"></path><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"></path><path d="M18 18a4 4 0 0 0 2-7.464"></path><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"></path><path d="M6 18a4 4 0 0 1-2-7.464"></path><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"></path></svg>Memória</button>
+  </nav>
+  <div class="jd-section-name">SEU ESPAÇO</div>
+  <button type="button" class="jd-project cursor-interaction" data-prompt="Continuar o JARVIS"><span class="jd-dot"></span>JARVIS</button>
+  <button type="button" class="jd-project cursor-interaction" data-prompt="Revisar o Prospect AI"><span class="jd-dot"></span>Prospect AI</button>
+  <button type="button" class="jd-project cursor-interaction" data-prompt="Organizar o Obsidian"><span class="jd-dot"></span>Segundo cérebro</button>
+  <div class="jd-profile"><div class="jd-avatar">E</div><div>Erik Moura<small>Meu assistente pessoal</small></div></div>
+ </aside>
+ <main>
+  <header class="jd-top"><div><span class="jd-crumb">Meu espaço</span><span class="jd-slash">/</span><span class="jd-current">Conversa</span></div><span class="jd-preview">Prévia visual</span></header>
+  <div class="jd-main">
+   <div class="jd-orb"><canvas role="img" aria-label="JARVIS representado por uma esfera animada de partículas luminosas">Esfera de partículas do JARVIS.</canvas><button type="button" class="jp-pause cursor-interaction">Pausar</button></div>
+   <div class="jp-status" aria-live="polite">Pronto para conversar</div>
+   <div class="jd-welcome"><h2>Boa noite, Erik.</h2><p>O que vamos construir hoje?</p></div>
+   <div class="jd-content" aria-live="polite">
+    <div class="jd-suggestions"><button type="button" data-prompt="Organizar meu dia" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M3 10h18"></path><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path><path d="M16 18h.01"></path></svg>Organizar meu dia</button><button type="button" data-prompt="Continuar o JARVIS" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path></svg>Continuar o JARVIS</button><button type="button" data-prompt="Ver minhas notas" class="cursor-interaction"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"></path><path d="M2 6h4"></path><path d="M2 10h4"></path><path d="M2 14h4"></path><path d="M2 18h4"></path><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"></path></svg>Ver minhas notas</button></div>
+   </div>
+   <form class="jd-composer"><label class="jd-sr" for="jarvis-moderno-message">Mensagem para o JARVIS</label><input id="jarvis-moderno-message" placeholder="Pergunte, planeje ou comece uma ideia…" autocomplete="off"><div class="jd-compose-bottom"><span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"></path><path d="M20 2v4"></path><path d="M22 4h-4"></path><circle cx="4" cy="20" r="2"></circle></svg>Seu próximo passo começa aqui</span><div><button type="button" class="jd-mic cursor-interaction" aria-label="Simular conversa por voz"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg></button><button type="submit" class="jd-send cursor-interaction" aria-label="Enviar mensagem de demonstração"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg></button></div></div></form>
+   <div class="jd-disclosure">Demonstração de aparência e movimento · ações simuladas</div>
+  </div>
+ </main>
+</div>
+</div>
+<script>
+
+
+(()=>{
+ const root=document.getElementById('jarvis-moderno'),content=root.querySelector('.jd-content'),form=root.querySelector('form'),input=root.querySelector('input');
+ const initial=content.innerHTML;let sequence=0;
+ const notes={Projetos:['JARVIS · assistente pessoal','Prospect AI · prospecção de empresas'],Tarefas:['Planejar os estudos','Avançar um projeto de programação'],Memória:['Segundo cérebro · Obsidian','Objetivos e ideias de projetos']};
+ const sendState=state=>root.dispatchEvent(new CustomEvent('jarvis-state',{detail:state}));
+ function select(view){root.querySelector('.jd-current').textContent=view;root.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)));}
+ function reset(){sequence++;select('Conversa');content.innerHTML=initial;input.value='';root.querySelector('.jd-welcome').hidden=false;sendState('idle');if(typeof lucide!=='undefined')lucide.createIcons({attrs:{width:16,height:16}});}
+ function reply(text){const id=++sequence;select('Conversa');root.querySelector('.jd-welcome').hidden=true;content.replaceChildren();const box=document.createElement('div');box.className='jd-chat';const user=document.createElement('strong');user.textContent=text;const answer=document.createElement('div');answer.textContent='Pensando…';box.append(user,answer);content.append(box);sendState('thinking');setTimeout(()=>{if(sequence!==id)return;answer.textContent=/dia|rotina/i.test(text)?'Podemos dividir seu tempo entre estudos, programação e descanso. Na versão final, este espaço mostrará seu plano e as tarefas do dia.':/nota|obsidian/i.test(text)?'Sua memória ficará acessível aqui. Na versão final, o JARVIS poderá consultar as notas que você conectar.':'Vamos continuar seu projeto. Na versão final, as respostas e ações do JARVIS aparecerão nesta conversa.';sendState('speaking');setTimeout(()=>{if(sequence===id)sendState('idle');},3500);},1200);}
+ root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.prompt){reply(b.dataset.prompt);return;}if(b.dataset.view){const view=b.dataset.view;sequence++;select(view);sendState('idle');root.querySelector('.jd-welcome').hidden=false;if(view==='Conversa'){reset();return;}content.replaceChildren();const list=document.createElement('div');list.className='jd-list';for(const label of notes[view]){const item=document.createElement('span');item.textContent=label;list.append(item);}content.append(list);}});
+ form.addEventListener('submit',e=>{e.preventDefault();const text=input.value.trim();if(text){input.value='';reply(text);}});root.querySelector('.jd-new').addEventListener('click',reset);
+ root.querySelector('.jd-mic').addEventListener('click',()=>{const id=++sequence;sendState('listening');setTimeout(()=>{if(sequence===id)reply('Organizar meu dia');},1800);});
+})();
+
+
+</script>
+<script>
+
+(()=>{
+ const root=document.getElementById('jarvis-moderno');
+ const canvas=root.querySelector('canvas'),ctx=canvas.getContext('2d');
+ const status=root.querySelector('.jp-status'),pause=root.querySelector('.jp-pause');
+ const labels={idle:'Pronto para conversar',listening:'Ouvindo você',thinking:'Organizando as ideias',speaking:'Respondendo'};
+ let state='idle',paused=matchMedia('(prefers-reduced-motion: reduce)').matches,time=0,last=0,w=0,h=0,dpr=1,energy=.12,target=.12,rotation=0;
+ const seed=Math.random()*5000;
+ function hash(n){const v=Math.sin(n*127.1+seed)*43758.5453;return (v-Math.floor(v))*2-1;}
+ function noise(t,key){const k=Math.floor(t),u=t-k,s=u*u*(3-2*u);return hash(k+key*31.7)*(1-s)+hash(k+1+key*31.7)*s;}
+ const points=[],N=1700,angle=Math.PI*(3-Math.sqrt(5));
+ for(let i=0;i<N;i++){const y=1-2*(i+.5)/N,r=Math.sqrt(1-y*y),a=i*angle;points.push({x:Math.cos(a)*r,y,z:Math.sin(a)*r,key:Math.random()*1000,phase:Math.random()*Math.PI*2});}
+ function resize(){const box=canvas.getBoundingClientRect();w=box.width;h=box.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);draw();}
+ function draw(){
+  if(!w||!h)return;
+  ctx.clearRect(0,0,w,h);
+  const t=time,cx=w/2+noise(t*.16,1)*6,cy=h/2+noise(t*.12,3)*7;
+  const base=Math.min(w*.29,h*.32)*(1+noise(t*.32,5)*.045);
+  const glow=ctx.createRadialGradient(cx,cy,base*.1,cx,cy,base*1.8);
+  glow.addColorStop(0,'rgba(87,151,255,.08)');glow.addColorStop(.5,'rgba(121,86,245,.05)');glow.addColorStop(1,'rgba(48,78,150,0)');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
+  const cr=Math.cos(rotation),sr=Math.sin(rotation),tilt=.18+noise(t*.18,7)*.3,ct=Math.cos(tilt),st=Math.sin(tilt);
+  const pulse=noise(t*(state==='speaking'?2.7:.4),9)*energy;
+  const drift=.015+energy*.025;
+  const projected=points.map(p=>{
+   const wave=Math.sin(p.x*4+t*.7+noise(t*.15,11))*Math.cos(p.y*4-t*.5)*Math.sin(p.z*4+t*.3);
+   const spread=1+wave*(.055+energy*.09)+noise(t*.5,p.key)*.038+pulse*.06;
+   const x0=p.x*spread+noise(t*.4,p.key+1)*drift,y0=p.y*spread+noise(t*.38,p.key+2)*drift,z0=p.z*spread+noise(t*.43,p.key+3)*drift;
+   const x=x0*cr+z0*sr,z1=-x0*sr+z0*cr,y=y0*ct-z1*st,z=y0*st+z1*ct;
+   const perspective=3.5/(3.5-z);
+   return {x:cx+x*base*perspective,y:cy+y*base*perspective,z,r:(.6+(z+1)*.5)*perspective,key:p.key,phase:p.phase};
+  }).sort((a,b)=>a.z-b.z);
+  for(const p of projected){
+   const front=Math.max(0,Math.min(1,(p.z+1)/2)),twinkle=.88+noise(t*.35,p.key+5)*.12;
+   const alpha=(.17+front*.73)*twinkle;
+   ctx.beginPath();ctx.fillStyle=`rgba(${95+Math.round(45*p.y/h)},${144+Math.round(front*65)},255,${alpha})`;ctx.arc(p.x,p.y,Math.max(.25,p.r),0,Math.PI*2);ctx.fill();
+   if(front>.78&&p.phase>6){ctx.beginPath();ctx.fillStyle=`rgba(191,225,255,${alpha*.15})`;ctx.arc(p.x,p.y,p.r*3,0,Math.PI*2);ctx.fill();}
+  }
+ }
+ function frame(ts){const dt=last?Math.min((ts-last)/1000,.05):0;last=ts;if(!paused){time+=dt;energy+=(target-energy)*Math.min(1,dt*4);rotation+=dt*(.12+energy*.15+noise(time*.16,20)*.09);if(w&&h)draw();}requestAnimationFrame(frame);}
+ root.addEventListener('jarvis-state',e=>{state=e.detail;target={idle:.12,listening:.48,thinking:.7,speaking:1}[state];status.textContent=labels[state];if(paused){energy=target;draw();}});
+ function pauseLabel(){pause.textContent=paused?'Animar':'Pausar';pause.setAttribute('aria-label',paused?'Iniciar animação':'Pausar animação');}
+ pause.addEventListener('click',()=>{paused=!paused;pauseLabel();});
+ new ResizeObserver(resize).observe(canvas);pauseLabel();resize();requestAnimationFrame(frame);
+})();
+
+
+</script>
+</body></html>

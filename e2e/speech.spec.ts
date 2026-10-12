@@ -1,3 +1,4 @@
+import { continuous, expectStoppedContinuous } from './ui';
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { prepare, completeRecognition } from './voice-cases';
@@ -22,9 +23,9 @@ async function cloud(page: Page, fakePlayback = true) {
 const mp3 = readFileSync(new URL('./fixtures/tone.mp3', import.meta.url));
 async function response(page: Page) {
   await page.getByRole('button', { name: 'Falar com JARVIS' }).click();
-  await expect(page.getByRole('status')).toContainText('À escuta');
+  await expect(page.getByRole('status')).toContainText('Ouvindo você');
   await completeRecognition(page, 'calcular dois mais cinco');
-  await expect(page.locator('.scene-reply')).toContainText('O resultado é 7.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('O resultado é 7.');
 }
 async function endAudio(page: Page) {
   await page.evaluate(() => (window as unknown as { speechTest: { player: { onended: () => void } } }).speechTest.player.onended());
@@ -38,18 +39,27 @@ test('voz por IA usa a API protegida e reprodução MP3, sem síntese nativa', a
     await route.fulfill({ contentType: 'audio/mpeg', body: mp3 });
   });
   await cloud(page); await response(page);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
   await endAudio(page);
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Ouvir resposta', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Falando'); expect(calls).toBe(1);
+  await expect(page.getByRole('status')).toContainText('Respondendo'); expect(calls).toBe(1);
 });
 
 test('Chromium decodifica e conclui um MP3 real pelo caminho de áudio por IA', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = AnalyserNode.prototype.getFloatTimeDomainData;
+    const state = { peak: 0 }; (window as unknown as { meterTest: typeof state }).meterTest = state;
+    AnalyserNode.prototype.getFloatTimeDomainData = function(samples) {
+      read.call(this, samples);
+      state.peak = Math.max(state.peak, ...samples.map(Math.abs));
+    };
+  });
   await page.route('**/api/speech', route => route.fulfill({ contentType: 'audio/mpeg', body: mp3 }));
   await cloud(page, false); await response(page);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { meterTest: { peak: number } }).meterTest.peak)).toBeGreaterThan(.001);
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
@@ -57,10 +67,10 @@ test('Chromium decodifica e conclui um MP3 real pelo caminho de áudio por IA', 
 test('cota gratuita esgotada tenta a voz nativa e preserva o texto', async ({ page }) => {
   await page.route('**/api/speech', route => route.fulfill({ status: 429, json: { error: 'A cota gratuita de voz foi atingida.' } }));
   await cloud(page); await response(page);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual(['O resultado é 7.']);
   await page.evaluate(() => (window as unknown as { voiceTest: { utterance: { onend: () => void } } }).voiceTest.utterance.onend());
-  await expect(page.locator('.scene-prompt')).toContainText('Usando a voz do aparelho');
+  await expect(page.locator('.jd-feedback')).toContainText('Usando a voz do aparelho');
 });
 
 test('interromper cancela geração pendente e ignora áudio atrasado', async ({ page }) => {
@@ -72,7 +82,7 @@ test('interromper cancela geração pendente e ignora áudio atrasado', async ({
   await page.getByRole('button', { name: 'Interromper resposta' }).click(); await canceled; release();
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { speechTest: { plays: number } }).speechTest.plays)).toBe(0);
-  await expect(page.locator('.scene-reply')).toContainText('O resultado é 7.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('O resultado é 7.');
 });
 
 test('bloqueio de reprodução permite toque para ouvir o mesmo áudio sem consumir novamente', async ({ page }) => {
@@ -83,19 +93,19 @@ test('bloqueio de reprodução permite toque para ouvir o mesmo áudio sem consu
   await response(page); await expect(page.getByRole('alert')).toContainText('O navegador bloqueou o áudio automático');
   await page.evaluate(() => { (window as unknown as { speechTest: { blocked: boolean } }).speechTest.blocked = false; });
   await page.getByRole('button', { name: 'Ouvir resposta', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Falando'); expect(calls).toBe(1);
+  await expect(page.getByRole('status')).toContainText('Respondendo'); expect(calls).toBe(1);
 });
 
 test('conversa contínua espera o áudio e interromper pausa a reprodução', async ({ page }) => {
   await page.route('**/api/speech', route => route.fulfill({ contentType: 'audio/mpeg', body: mp3 }));
-  await cloud(page); await page.getByRole('checkbox', { name: /Conversa contínua/ }).check(); await response(page);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await cloud(page); await continuous(page); await response(page);
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts)).toBe(1);
   await endAudio(page);
   await expect.poll(() => page.evaluate(() => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts)).toBe(2);
-  await completeRecognition(page, 'calcular dois mais cinco'); await expect(page.getByRole('status')).toContainText('Falando');
+  await completeRecognition(page, 'calcular dois mais cinco'); await expect(page.getByRole('status')).toContainText('Respondendo');
   await page.getByRole('button', { name: 'Interromper resposta' }).click();
-  await expect(page.getByRole('checkbox', { name: /Conversa contínua/ })).not.toBeChecked();
+  await expectStoppedContinuous(page);
   expect(await page.evaluate(() => (window as unknown as { speechTest: { pauses: number } }).speechTest.pauses)).toBeGreaterThan(0);
 });
 
@@ -146,7 +156,7 @@ test('falha no teste ElevenLabs mostra erro e não volta a falar pela voz do Goo
   await page.getByRole('button', { name: 'Falar com JARVIS', exact: true }).click();
   await completeRecognition(page, 'calcular dois mais cinco');
   await expect(page.getByRole('alert')).toContainText('User → Read');
-  await expect(page.locator('.scene-reply')).toContainText('O resultado é 7.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('O resultado é 7.');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
 });
 

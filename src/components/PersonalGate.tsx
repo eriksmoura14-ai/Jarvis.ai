@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { LockKeyhole, RefreshCw } from 'lucide-react';
 import App from '../App';
-import { Core } from './Core';
+import { ParticleOrb } from './ParticleOrb';
 import { BROWSER_MODE } from '../lib/api';
 import { personalRequest, personalSession, personalSnapshot } from '../lib/personal';
 import type { PersonalSnapshot } from '../../shared/contracts';
@@ -42,7 +42,7 @@ export function PersonalGate() {
   if (state === 'disabled') return <App />;
   if (state === 'ready' && snapshot) return <App personal={snapshot} onLock={lock} />;
   return <main className="personal-gate"><LoginNavigation /><div className="personal-login">
-    <Core state={busy || state === 'checking' ? 'thinking' : 'idle'} />
+    <ParticleOrb state={busy || state === 'checking' ? 'thinking' : 'idle'} />
     <span className="eyebrow">JARVIS · ACESSO PESSOAL</span><h1>Seu assistente. Sua memória.</h1>
     {state === 'locked' ? <form onSubmit={event => void login(event)}>
       <label htmlFor="personal-password"><LockKeyhole size={18} /> Senha pessoal</label>

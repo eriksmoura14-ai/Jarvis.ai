@@ -9,7 +9,7 @@ const mp3 = readFileSync(new URL('./fixtures/tone.mp3', import.meta.url));
 const result = (message = answer) => ({ id: 'progressive-reply', message, provider: 'groq', command: 'conversation', createdAt: new Date().toISOString(), timings: { preparationMs: 12, answerMs: 320, saveMs: 10, totalMs: 342 } });
 
 async function type(page: Page) {
-  await page.getByRole('button', { name: 'Digitar mensagem' }).click();
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).focus();
   await page.getByRole('textbox').fill('Como conversar melhor?');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 }
@@ -41,14 +41,14 @@ async function finishStream(page: Page, value: unknown) {
 
 test('texto progressivo aparece antes do fim, sem salvar ou falar o rascunho', async ({ page }) => {
   await streamFixture(page); await type(page);
-  await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
-  await expect(page.getByRole('status')).toContainText('Processando');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('Começo da resposta.');
+  await expect(page.getByRole('status')).toContainText('Organizando as ideias');
   await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('jarvis.history.v1'))).not.toContain('Começo da resposta.');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
   await finishStream(page, { type: 'result', response: result('Resposta final confirmada.') });
-  await expect(page.locator('.scene-reply')).toContainText('Resposta final confirmada.');
-  await expect(page.locator('.scene-reply')).not.toContainText('Começo da resposta.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('Resposta final confirmada.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).not.toContainText('Começo da resposta.');
   await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Preferências' }).click();
   const timings = page.getByRole('region', { name: 'Tempos da conversa' });
@@ -59,20 +59,20 @@ test('texto progressivo aparece antes do fim, sem salvar ou falar o rascunho', a
 
 test('erro após texto parcial remove o rascunho, não fala e devolve a pergunta', async ({ page }) => {
   await streamFixture(page); await type(page);
-  await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('Começo da resposta.');
   await finishStream(page, { type: 'error', error: 'Sua memória mudou enquanto eu respondia.' });
   await expect(page.getByRole('alert')).toContainText('Sua memória mudou');
   await expect(page.getByRole('textbox')).toHaveValue('Como conversar melhor?');
-  await expect(page.locator('.scene-reply')).toHaveCount(0);
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('jarvis.history.v1'))).not.toContain('Começo da resposta.');
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
 });
 
 test('interromper texto progressivo cancela o leitor e impede fala tardia', async ({ page }) => {
   await streamFixture(page); await type(page);
-  await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('Começo da resposta.');
   await page.getByRole('button', { name: 'Interromper resposta' }).click();
-  await expect(page.locator('.scene-reply')).toHaveCount(0);
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (window as unknown as { progressTest: { canceled: boolean } }).progressTest.canceled)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { progressTest: { signal: AbortSignal } }).progressTest.signal.aborted)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
@@ -80,13 +80,13 @@ test('interromper texto progressivo cancela o leitor e impede fala tardia', asyn
 
 test('trocar estilo cancela resposta pendente para impedir áudio com preferências antigas', async ({ page }) => {
   await streamFixture(page); await type(page);
-  await expect(page.locator('.scene-reply')).toContainText('Começo da resposta.');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('Começo da resposta.');
   await page.getByRole('button', { name: 'Preferências', exact: true }).click();
   await page.getByRole('combobox', { name: 'Estilo de fala', exact: true }).selectOption('natural');
   await expect.poll(() => page.evaluate(() => (window as unknown as { progressTest: { canceled: boolean } }).progressTest.canceled)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { progressTest: { signal: AbortSignal } }).progressTest.signal.aborted)).toBe(true);
   await page.getByRole('button', { name: 'Fechar janela' }).click();
-  await expect(page.locator('.scene-reply')).toHaveCount(0);
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
 });
 
@@ -116,7 +116,7 @@ test('segunda parte é preparada durante a primeira, espera a reprodução e rea
   const requests: string[] = [];
   await page.route('**/api/speech', route => { requests.push(route.request().postDataJSON().text); return route.fulfill({ contentType: 'audio/mpeg', body: mp3 }); });
   await cloudFixture(page); await type(page);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await expect.poll(() => requests.length).toBe(2); expect(requests).toEqual([first, second.trim()]);
   expect(await plays(page)).toBe(1);
   await page.evaluate(() => {
@@ -138,12 +138,12 @@ test('cancelar a primeira parte cancela preparação da segunda e não reproduz 
   const secondRequested = page.waitForRequest(request => request.url().endsWith('/api/speech') && request.postDataJSON().text !== first);
   await type(page); const requested = await secondRequested;
   await endAudio(page);
-  await expect(page.getByRole('status')).toContainText('Processando');
+  await expect(page.getByRole('status')).toContainText('Organizando as ideias');
   await expect(page.getByRole('button', { name: 'Interromper resposta' })).toBeVisible();
   const canceled = page.waitForEvent('requestfailed', request => request === requested);
   await page.getByRole('button', { name: 'Interromper resposta' }).click(); await canceled; release();
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
-  expect(await plays(page)).toBe(1); await expect(page.locator('.scene-reply')).toContainText(answer);
+  expect(await plays(page)).toBe(1); await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText(answer);
 });
 
 test('reprodução bloqueada reaproveita a primeira parte ao tocar e gera somente a segunda', async ({ page }) => {
@@ -164,29 +164,29 @@ test('comando de interrupção ignora fala comum e para sem enviar reconheciment
   let calls = 0; page.on('request', request => { if (request.url().endsWith('/api/chat')) calls++; });
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts)).toBe(0);
   await page.getByRole('button', { name: 'Falar com JARVIS' }).click();
-  await expect(page.getByRole('status')).toContainText('À escuta'); await completeRecognition(page, 'calcular dois mais cinco');
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Ouvindo você'); await completeRecognition(page, 'calcular dois mais cinco');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await expect.poll(() => page.evaluate(() => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts)).toBe(2);
   await page.evaluate(() => {
     const state = (window as unknown as { voiceTest: { recognition: { onresult: (event: unknown) => void } } }).voiceTest;
     state.recognition.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'O resultado é sete' } }] });
   });
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await completeRecognition(page, 'Jarvis, pare.');
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
-  await expect(page.locator('.scene-prompt')).toContainText('interrompida pela sua voz'); expect(calls).toBe(1);
+  await expect(page.locator('.jd-feedback')).toContainText('interrompida pela sua voz'); expect(calls).toBe(1);
 });
 
 test('falha na segunda parte em modo ElevenLabs preserva texto sem repetir pedido ou usar voz nativa', async ({ page }) => {
   let calls = 0;
   await page.route('**/api/speech', route => ++calls === 1 ? route.fulfill({ contentType: 'audio/mpeg', body: mp3 }) : route.fulfill({ status: 429, json: { error: 'A cota gratuita da segunda parte acabou.' } }));
   await cloudFixture(page); await type(page);
-  await expect.poll(() => calls).toBe(2); await expect(page.getByRole('status')).toContainText('Falando');
+  await expect.poll(() => calls).toBe(2); await expect(page.getByRole('status')).toContainText('Respondendo');
   await endAudio(page); await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
-  await expect(page.locator('.scene-prompt')).toContainText('cota gratuita');
+  await expect(page.locator('.jd-feedback')).toContainText('cota gratuita');
   expect(calls).toBe(2); expect(await plays(page)).toBe(1);
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
-  await expect(page.locator('.scene-reply')).toContainText(answer);
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText(answer);
 });
 
 test('eco de comando citado pela resposta não interrompe a própria voz', async ({ page }) => {
@@ -194,14 +194,14 @@ test('eco de comando citado pela resposta não interrompe a própria voz', async
   await page.route('**/api/chat', route => route.fulfill({ json: result('Você pode dizer Jarvis pare para interromper a resposta, ou usar o botão central.') }));
   await prepare(page);
   await page.getByRole('button', { name: 'Falar com JARVIS' }).click();
-  await expect(page.getByRole('status')).toContainText('À escuta'); await completeRecognition(page, 'Explique a interrupção');
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Ouvindo você'); await completeRecognition(page, 'Explique a interrupção');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await expect.poll(() => page.evaluate(() => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts)).toBe(2);
   await page.evaluate(() => {
     const state = (window as unknown as { voiceTest: { recognition: { onresult: (event: unknown) => void } } }).voiceTest;
     state.recognition.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'Jarvis, pare' } }] });
   });
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await completeRecognition(page, 'Jarvis, pausa');
   await expect(page.getByRole('button', { name: 'Falar com JARVIS', exact: true })).toBeVisible();
 });
@@ -217,7 +217,7 @@ test('falha na preparação antecipada em modo automático conclui por voz nativ
   await endAudio(page);
   await expect.poll(() => page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([second.trim()]);
   expect(calls).toBe(2); expect(await plays(page)).toBe(1);
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
 });
 
 test('recepção pessoal, notícias opcionais com fontes e uma consulta automática por dia', async ({ page }) => {
@@ -234,17 +234,17 @@ test('recepção pessoal, notícias opcionais com fontes e uma consulta automát
     return route.fulfill({ json: reply });
   });
   await prepare(page);
-  await expect(page.getByRole('region', { name: 'Recepção pessoal' })).toContainText(', senhor.');
+  await page.getByRole('button', { name: 'Preferências' }).click(); await expect(page.getByRole('region', { name: 'Recepção pessoal' })).toContainText(', senhor.'); await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.getByRole('button', { name: 'Preferências' }).click();
   await expect(page.getByRole('checkbox', { name: /Buscar notícias ao abrir/ })).not.toBeChecked(); expect(calls).toBe(0);
   await page.getByRole('checkbox', { name: /Buscar notícias ao abrir/ }).check();
   await page.getByLabel('Assunto das notícias').fill('astronomia');
   await page.getByRole('button', { name: 'Fechar janela' }).click();
   await expect.poll(() => calls).toBe(1);
-  await expect(page.locator('.scene-reply')).toContainText('astronomia');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('astronomia');
   await expect(page.getByRole('link', { name: 'NASA', exact: false })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { starts: number; spoken: string[] } }).voiceTest)).toMatchObject({ starts: 0, spoken: [] });
-  await page.reload(); await expect(page.getByRole('region', { name: 'Recepção pessoal' })).toContainText(', senhor.');
+  await page.reload(); await page.getByRole('button', { name: 'Preferências' }).click(); await expect(page.getByRole('region', { name: 'Recepção pessoal' })).toContainText(', senhor.'); await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.waitForTimeout(1800); expect(calls).toBe(1);
   await page.setViewportSize({ width: 320, height: 720 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

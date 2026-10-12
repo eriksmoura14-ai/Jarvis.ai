@@ -10,7 +10,7 @@ test('chat, notas e histórico funcionam sem API no caminho do GitHub Pages', as
   await page.route('**/api/**', route => route.abort());
   await page.goto('./');
   await expect(page.getByText('Modo navegador', { exact: true })).toBeVisible();
-  await expect(page.getByText('Neste navegador', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Histórico neste navegador/)).toBeVisible();
   const send = async (text: string) => {
     await page.getByRole('textbox').fill(text);
     await page.getByRole('button', { name: 'Enviar mensagem' }).click();
@@ -21,9 +21,9 @@ test('chat, notas e histórico funcionam sem API no caminho do GitHub Pages', as
   await expect(page.getByText('Nota salva: publicar meu portfólio', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('Nota salva: publicar meu portfólio', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
+  await page.getByRole('button', { name: 'Nova conversa', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Limpar conversa' }).click();
-  await page.getByRole('button', { name: 'Minhas notas' }).click();
+  await page.getByRole('button', { name: 'Ver minhas notas' }).click();
   await expect(page.getByText(/1\. publicar meu portfólio/)).toBeVisible();
   await send('apagar notas');
   await expect(page.getByText('1 nota excluída.', { exact: true })).toBeVisible();
@@ -37,7 +37,6 @@ test('limites de dados da versão estática são informados corretamente', async
   await page.getByRole('button', { name: 'Preferências' }).click();
   await expect(page.getByRole('dialog')).toContainText('Notas e cálculos são processados aqui');
   await expect(page.getByRole('dialog')).toContainText('Quando você conecta um backend, perguntas à IA enviam a mensagem e o contexto recente');
-  await page.getByRole('button', { name: 'Fechar janela' }).click();
-  await page.getByRole('button', { name: 'Comandos', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Comandos', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Guardar uma nota neste navegador');
 });

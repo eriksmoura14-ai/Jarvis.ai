@@ -1,3 +1,4 @@
+import { history, mode } from './ui';
 import { test, expect } from '@playwright/test';
 import { prepare, completeRecognition } from './voice-cases';
 
@@ -21,13 +22,13 @@ test('pesquisa explícita mostra links seguros no chat e restaura fontes no hist
   const link = page.getByRole('link', { name: /Documentação oficial do React/ });
   await expect(link).toHaveAttribute('href', 'https://react.dev/learn');
   await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-  await expect(page.locator('.message-badge').last()).toHaveText('WEB');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toHaveAttribute('data-provider', 'groq');
   await page.reload();
   await expect(link).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Abrir modo voz' }).click();
-  await expect(page.locator('.scene-response').getByRole('region', { name: 'Fontes da pesquisa' })).toBeVisible();
-  await page.getByRole('button', { name: 'Abrir histórico' }).click();
+  await mode(page, 'voice');
+  await expect(page.locator('.jd-content').getByRole('region', { name: 'Fontes da pesquisa' })).toBeVisible();
+  await history(page);
   await expect(page.getByRole('dialog').getByRole('link', { name: /Documentação oficial do React/ })).toBeVisible();
 });
 
@@ -57,9 +58,9 @@ test('comando falado pesquisa e sintetiza só a resposta; fontes ficam acessíve
   await page.route('**/api/chat', route => { calls.push(route.request().postDataJSON()); return route.fulfill({ json: response }); });
   await prepare(page);
   await page.getByRole('button', { name: 'Falar com JARVIS' }).click();
-  await expect(page.getByRole('status')).toContainText('À escuta');
+  await expect(page.getByRole('status')).toContainText('Ouvindo você');
   await completeRecognition(page, 'Jarvis, pesquise React');
-  await expect(page.locator('.scene-reply')).toContainText('componentes reutilizáveis');
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('componentes reutilizáveis');
   await expect(page.getByRole('link', { name: /Documentação oficial do React/ })).toBeVisible();
   expect(calls).toHaveLength(1);
   expect(calls[0].message).toBe('Jarvis, pesquise React');
@@ -67,24 +68,25 @@ test('comando falado pesquisa e sintetiza só a resposta; fontes ficam acessíve
   expect(spoken).toEqual(['React usa componentes reutilizáveis.']);
 });
 
-test('uma pesquisa falha no modo voz não apresenta nem reproduz a resposta anterior', async ({ page }) => {
+test('pesquisa falha preserva o histórico sem criar resposta nova nem reproduzir a anterior', async ({ page }) => {
   await page.addInitScript(response => localStorage.setItem('jarvis.history.v1', JSON.stringify([
     { id: 'old-user', role: 'user', content: 'pesquise React', createdAt: response.createdAt },
     { ...response, role: 'assistant', content: response.message },
   ])), response);
   await page.route('**/api/chat', route => route.fulfill({ status: 503, json: { error: 'Não encontrei notícias relacionadas ao assunto com data nos últimos sete dias.' } }));
   await prepare(page);
-  await expect(page.locator('.scene-reply')).toContainText('componentes reutilizáveis');
-  await page.getByRole('button', { name: 'Digitar mensagem' }).click();
+  await expect(page.locator('.jd-message-log .message-assistant').last()).toContainText('componentes reutilizáveis');
+  await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).focus();
   await page.getByRole('textbox').fill('Últimas notícias tecnologia e ia');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.getByRole('alert')).toContainText('notícias relacionadas');
   await expect(page.getByRole('textbox')).toHaveValue('Últimas notícias tecnologia e ia');
-  await expect(page.locator('.scene-reply')).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toHaveCount(0);
+  await expect(page.locator('.jd-message-log .message-assistant')).toHaveCount(1);
+  await expect(page.locator('.jd-orb canvas')).toHaveAttribute('data-state', 'idle');
+  await expect(page.locator('.jd-message-log .message-user')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Ouvir resposta', exact: true })).toHaveCount(1);
   expect(await page.evaluate(() => (window as unknown as { voiceTest: { spoken: string[] } }).voiceTest.spoken)).toEqual([]);
-  await page.getByRole('button', { name: 'Abrir histórico' }).click();
+  await history(page);
   await expect(page.getByRole('dialog')).toContainText('componentes reutilizáveis');
 });
 
@@ -105,7 +107,7 @@ test('pesquisa automática mostra consultas complementares e restaura os detalhe
   let request: { webSearch?: boolean; message: string } | undefined;
   await page.route('**/api/chat', route => { request = route.request().postDataJSON(); return route.fulfill({ json: { ...response, webSearch: { ...response.webSearch, queries: ['React', 'TypeScript'], engines: ['bing', 'duckduckgo'] } } }); });
   await page.goto('/');
-  await expect(page.getByText(/Pesquisa automática ativa/)).toBeVisible();
+  await page.getByRole('button', { name: 'Preferências' }).click(); await expect(page.getByText(/Pesquisa automática ativa/)).toBeVisible(); await page.getByRole('button', { name: 'Fechar janela' }).click();
   await expect(page.getByRole('checkbox', { name: 'Pesquisar na web' })).toHaveCount(0);
   await page.getByRole('textbox').fill('Compare as novidades de React e TypeScript');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();

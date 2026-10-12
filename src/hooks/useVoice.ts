@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestSpeech, SpeechRequestError } from '../lib/speech';
 import { speechText, VOICE_ID_PATTERN, type SpeechProfile } from '../../shared/speech';
+import { audioMeter, type AudioMeter } from '../lib/audio-meter';
 
 interface RecognitionEvent {
   resultIndex: number;
@@ -32,6 +33,8 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
   const lastDuration = useRef<number | undefined>(undefined);
   const phaseRef = useRef(phase);
   const stream = useRef<MediaStream | null>(null);
+  const meter = useRef<AudioMeter | undefined>(undefined);
+  const audioLevel = useCallback(() => meter.current?.level(), []);
   const recorder = useRef<MediaRecorder | null>(null);
   const recognition = useRef<Recognition | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +54,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
     timer.current = null;
     if (recorder.current?.state === 'recording') recorder.current.stop();
     recorder.current = null;
+    meter.current?.close(); meter.current = undefined;
     stream.current?.getTracks().forEach(track => track.stop());
     stream.current = null;
     phaseRef.current = 'idle';
@@ -92,6 +96,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
         const input = await navigator.mediaDevices.getUserMedia({ audio: true });
         if (token !== generation.current) { input.getTracks().forEach(track => track.stop()); return; }
         stream.current = input;
+        meter.current = audioMeter(input);
         if (url.current) URL.revokeObjectURL(url.current);
         url.current = '';
         setAudioUrl('');
@@ -184,8 +189,9 @@ export function useVoiceInput(onTranscript: (text: string) => void, options: Inp
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
     if (url.current) URL.revokeObjectURL(url.current);
+    meter.current?.close();
   }, []);
-  return { phase, error, audioUrl, interim, durationMs, getDurationMs: () => lastDuration.current, canRecord, canRecognize, start, stop, cancel, cancelRequest: cancel, clearAudio };
+  return { phase, error, audioUrl, interim, durationMs, audioLevel, getDurationMs: () => lastDuration.current, canRecord, canRecognize, start, stop, cancel, cancelRequest: cancel, clearAudio };
 }
 
 export type SpeechOutcome = 'ended' | 'canceled' | 'error' | 'unavailable';
@@ -298,6 +304,8 @@ export function useSpeechOutput(cloudAvailable = false) {
   const request = useRef<AbortController | null>(null);
   const preparationRequests = useRef(new Set<AbortController>());
   const audio = useRef<HTMLAudioElement | null>(null);
+  const meter = useRef<AudioMeter | undefined>(undefined);
+  const audioLevel = useCallback(() => meter.current?.level(), []);
   const objectUrl = useRef('');
   const finish = useRef<((outcome: SpeechOutcome) => void) | null>(null);
   // Retain up to two clips in memory for explicit replay, including segmented speech.
@@ -332,6 +340,7 @@ export function useSpeechOutput(cloudAvailable = false) {
     finish.current = null;
     request.current?.abort(); request.current = null;
     preparationRequests.current.forEach(controller => controller.abort()); preparationRequests.current.clear();
+    meter.current?.close(); meter.current = undefined;
     if (audio.current) {
       audio.current.onplaying = null; audio.current.onended = null; audio.current.onerror = null;
       audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null;
@@ -363,6 +372,7 @@ export function useSpeechOutput(cloudAvailable = false) {
         clearTimeout(timer);
         if (token === generation.current) {
           finish.current = null; request.current = null; setBusy(false); setSpeaking(false);
+          meter.current?.close(); meter.current = undefined;
           if (audio.current) { audio.current.onplaying = null; audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null; }
           if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
           objectUrl.current = '';
@@ -396,6 +406,7 @@ export function useSpeechOutput(cloudAvailable = false) {
         clearTimeout(timer);
         objectUrl.current = URL.createObjectURL(blob);
         const player = new Audio(objectUrl.current); audio.current = player;
+        meter.current = audioMeter(player);
         let notified = false;
         player.onplaying = () => {
           if (token !== generation.current) return;
@@ -433,7 +444,7 @@ export function useSpeechOutput(cloudAvailable = false) {
   useEffect(() => () => { stop(); cached.current.clear(); }, [stop]);
   return { ...native, supported: native.supported || cloudAvailable, busy: busy || native.busy,
     speaking: speaking || native.speaking, error: error || native.error, notice, timings, engine, chooseEngine, cloudAvailable,
-    nativeAvailable: native.supported, profile, chooseProfile, cloudVoiceId, chooseCloudVoice, speak, prepare, stop };
+    nativeAvailable: native.supported, profile, chooseProfile, cloudVoiceId, chooseCloudVoice, audioLevel, speak, prepare, stop };
 }
 
 export function useSpeechInterrupt(enabled: boolean, spokenText: string, onInterrupt: () => void) {

@@ -1,12 +1,14 @@
+import { plan } from '../e2e/ui';
+import { mode } from '../e2e/ui';
 import { test, expect, type Page } from '@playwright/test';
 const client = { 'X-Jarvis-Client': '1' };
 async function enter(page: Page) {
   await page.goto('/'); await page.getByLabel('Senha pessoal').fill('fixture-local-personal-123');
   await page.getByRole('button', { name: 'Entrar no JARVIS' }).click();
-  await expect(page.getByRole('button', { name: 'Projetos e tarefas', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Projetos', exact: true })).toBeVisible();
 }
 async function create(page: Page, title: string, steps: string) {
-  await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+  await page.getByRole('button', { name: 'Projetos', exact: true }).click();
   await page.getByLabel('Nome do projeto').fill(title); await page.getByLabel('Objetivo do projeto').fill('Um objetivo pessoal');
   await page.getByLabel('Etapas iniciais').fill(steps); await page.getByRole('button', { name: 'Criar projeto', exact: true }).click();
   await expect(page.getByRole('article', { name: `Projeto ${title}`, exact: true })).toBeVisible();
@@ -27,10 +29,10 @@ test('projeto, prazo, progresso, reabertura e arquivo persistem na conta', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await card.getByRole('button', { name: 'Arquivar projeto: Meu inglês', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Restaurar projeto: Meu inglês' })).toBeVisible();
-  await page.reload(); await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+  await page.reload(); await page.getByRole('button', { name: 'Projetos', exact: true }).click();
   await card.getByRole('button', { name: 'Restaurar projeto: Meu inglês', exact: true }).click();
-  await page.getByRole('button', { name: 'Fechar janela' }).click();
-  await expect(page.getByRole('region', { name: 'Suas prioridades' })).toContainText('Ouvir podcast');
+  await page.getByRole('button', { name: 'Tarefas', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Suas tarefas' })).toContainText('Ouvir podcast');
 });
 test('outro aparelho vê as tarefas e uma revisão antiga não sobrescreve alterações', async ({ page, browser }) => {
   await enter(page); await create(page, 'Portfólio', 'Revisar currículo');
@@ -39,13 +41,13 @@ test('outro aparelho vê as tarefas e uma revisão antiga não sobrescreve alter
   const secondContext = await browser.newContext({ baseURL: test.info().project.use.baseURL });
   try {
     const second = await secondContext.newPage(); await enter(second);
-    await expect(second.getByRole('region', { name: 'Suas prioridades' })).toContainText('4 pendentes');
-    await second.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+    await second.getByRole('button', { name: 'Tarefas', exact: true }).click(); await expect(second.getByRole('region', { name: 'Suas tarefas' }).locator('article')).toHaveCount(4);
+    await second.getByRole('button', { name: 'Projetos', exact: true }).click();
     await expect(second.getByRole('article', { name: 'Projeto Portfólio', exact: true })).toContainText('Revisar currículo');
     await second.getByRole('article', { name: 'Projeto Portfólio', exact: true }).getByRole('button', { name: 'Concluir tarefa: Revisar currículo', exact: true }).click();
     const stale = await page.request.post('/api/personal/projects/change', { headers: client, data: { projectsRevision: initial.projectsRevision, change: { action: 'add_tasks', projectId: project.id, tasks: [{ title: 'Edição desatualizada' }] } } });
     expect(stale.status()).toBe(409);
-    await page.reload(); await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+    await page.reload(); await page.getByRole('button', { name: 'Projetos', exact: true }).click();
     await expect(page.getByRole('article', { name: 'Projeto Portfólio', exact: true })).toContainText('1 de 1 tarefas concluídas');
     await expect(page.getByText('Edição desatualizada', { exact: true })).toHaveCount(0);
   } finally { await secondContext.close(); }
@@ -68,14 +70,14 @@ test('proposta aparece para revisão, descartar não salva e confirmação falha
   await send(); await expect(page.getByRole('region', { name: 'Revisar proposta do JARVIS' })).toContainText('15/10/2026');
   expect((await (await page.request.get('/api/personal/data')).json()).projects.some((project: { title: string }) => project.title === 'Plano proposto')).toBe(false);
   await page.getByRole('button', { name: 'Descartar proposta' }).click(); await expect(page.getByRole('button', { name: 'Confirmar proposta' })).toHaveCount(0);
-  await send(); await page.getByRole('button', { name: 'Abrir modo voz' }).click();
+  await send(); await mode(page, 'voice');
   await expect(page.getByRole('region', { name: 'Revisar proposta do JARVIS' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirmar proposta' }).click(); await expect(page.getByRole('alert')).toContainText('Falha temporária');
   await page.getByRole('button', { name: 'Confirmar proposta' }).click();
   await expect(page.getByRole('button', { name: 'Confirmar proposta' })).toHaveCount(0);
   const updated = await (await page.request.get('/api/personal/data')).json();
   expect(updated.projects.filter((project: { title: string }) => project.title === 'Plano proposto')).toHaveLength(1);
-  await page.reload(); await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+  await page.reload(); await page.getByRole('button', { name: 'Projetos', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Projeto Plano proposto', exact: true })).toContainText('Revisar TypeScript');
 });
 
@@ -95,7 +97,7 @@ test('planejamento usa notas reais, salva somente na confirmação e não duplic
   const imported = await page.request.post('/api/personal/knowledge/import', { headers: client, data: { files: [{ path: '04 Planejamento/Tarefas pessoais.md', content }], replace: false, libraryRevision: initial.libraryRevision } });
   expect(imported.status()).toBe(200);
   await page.reload();
-  await page.getByRole('button', { name: 'Planejar meu dia', exact: true }).click();
+  await plan(page);
   const proposal = page.getByRole('region', { name: 'Revisar proposta do JARVIS' });
   await expect(proposal).toContainText('Rever candidatura');
   await expect(proposal).toContainText('Conferir orçamento');
@@ -110,15 +112,23 @@ test('planejamento usa notas reais, salva somente na confirmação e não duplic
   expect(daily.tasks.map((task: { title: string }) => task.title)).toEqual(['Rever candidatura', 'Conferir orçamento']);
   const note = saved.library.find((note: { path: string }) => note.path === '04 Planejamento/Tarefas pessoais.md');
   expect((await (await page.request.get(`/api/personal/knowledge/${note.id}`)).json()).content).toBe(content);
-  await page.getByRole('button', { name: 'Projetos e tarefas', exact: true }).click();
+  await page.getByRole('button', { name: 'Projetos', exact: true }).click();
   const card = page.getByRole('article', { name: 'Projeto Plano diário', exact: true });
   await card.getByRole('button', { name: 'Concluir tarefa: Rever candidatura', exact: true }).click();
   await card.getByRole('button', { name: 'Concluir tarefa: Conferir orçamento', exact: true }).click();
-  await page.getByRole('button', { name: 'Fechar janela', exact: true }).click();
-  await page.getByRole('button', { name: 'Planejar meu dia', exact: true }).click();
+  await page.getByRole('button', { name: 'Conversa', exact: true }).click();
+  await plan(page);
   await expect(page.locator('.message-assistant').last()).toContainText('Qual objetivo');
   await expect(proposal).toHaveCount(0);
   saved = await (await page.request.get('/api/personal/data')).json();
   expect(saved.projects.find((project: { id: string }) => project.id === daily.id).tasks).toHaveLength(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+ await create(page, 'Tarefas Moderna', 'Revisar anotação');
+  await page.getByRole('button', { name: 'Tarefas', exact: true }).click();
+  const tasks = page.getByRole('region', { name: 'Suas tarefas' });
+  await expect(tasks).toContainText('Revisar anotação');
+  await tasks.getByRole('button', { name: 'Concluir tarefa: Revisar anotação', exact: true }).click();
+  await expect(tasks.getByRole('button', { name: 'Concluir tarefa: Revisar anotação', exact: true })).toHaveCount(0);
+  await page.reload(); await page.getByRole('button', { name: 'Projetos', exact: true }).click();
+  await expect(page.getByRole('article', { name: 'Projeto Tarefas Moderna', exact: true })).toContainText('1 de 1 tarefas concluídas');
 });

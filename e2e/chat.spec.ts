@@ -14,11 +14,11 @@ test('chat real, histórico após recarga e limpeza confirmada', async ({ page }
   await expect(page.getByText('O resultado é 10.', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('O resultado é 10.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
+  await page.getByRole('button', { name: 'Nova conversa', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await expect(page.getByText('O resultado é 10.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
+  await page.getByRole('button', { name: 'Nova conversa', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Limpar conversa' }).click();
   await expect(page.getByText('O resultado é 10.', { exact: true })).toHaveCount(0);
   await page.reload();
@@ -27,9 +27,9 @@ test('chat real, histórico após recarga e limpeza confirmada', async ({ page }
 test('notas sobrevivem à limpeza da conversa', async ({ page }) => {
   await send(page, 'anotar revisar portfólio');
   await expect(page.getByText('Nota salva: revisar portfólio', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar conversa', exact: true }).click();
+  await page.getByRole('button', { name: 'Nova conversa', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Limpar conversa' }).click();
-  await page.getByRole('button', { name: 'Minhas notas' }).click();
+  await page.getByRole('button', { name: 'Ver minhas notas' }).click();
   await expect(page.getByText(/1\. revisar portfólio/)).toBeVisible();
   await send(page, 'apagar notas');
   await expect(page.getByText('1 nota excluída.', { exact: true })).toBeVisible();
@@ -49,7 +49,7 @@ test('fallback sem voz, teclado, diálogo e preferências persistidas', async ({
     Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true });
   });
   await page.reload();
-  await expect(page.getByText(/Reconhecimento de voz indisponível neste navegador/)).toBeVisible();
+  await page.getByRole('button', { name: 'Preferências' }).click(); await expect(page.getByText(/Reconhecimento de voz indisponível neste navegador/)).toBeVisible(); await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.getByRole('textbox').fill('ajuda');
   await page.getByRole('textbox').press('Enter');
   await expect(page.getByText(/Posso ajudar com estes comandos/)).toBeVisible();
@@ -75,6 +75,6 @@ test('recusa do microfone não impede a digitação', async ({ page }) => {
 test('layout não transborda e respeita movimento reduzido', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await page.locator('.core-outer').evaluate(element => getComputedStyle(element).animationName)).toBe('none');
+  await expect(page.locator('.jd-orb canvas')).toHaveAttribute('data-paused', 'true');
   await page.screenshot({ path: `test-results/jarvis-${test.info().project.name}.png`, fullPage: true });
 });

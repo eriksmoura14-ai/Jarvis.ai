@@ -92,8 +92,8 @@ O GitHub Pages serve o site via HTTPS, mas não executa Fastify nem SQLite. Esse
 
 ## Funcionalidades implementadas
 
-- Interface em português, tema escuro e detalhes azuis, núcleo animado em CSS/SVG, layouts para desktop e celular.
-- Tela inicial de voz com núcleo central, estados de escuta/processamento/fala, última resposta visível e histórico recolhido. Botão **Chat** abre a interface completa; a escolha de tela permanece ao recarregar.
+- Interface Moderna em português, baseada na referência aprovada: tema escuro, esfera de 1.700 partículas em Canvas e layouts para desktop e celular.
+- Uma interface para conversa, projetos, tarefas e memória, com estados reais de escuta/processamento/fala. Em **Preferências**, escolha entre voz com envio automático e chat com transcrição revisável; a escolha permanece ao recarregar.
 - Chat conectado à API real, com processamento, erros, limite de tamanho e preservação do texto quando o envio falha.
 - Comandos de saudação, ajuda, hora/data no fuso do navegador, cálculo e notas.
 - Modo opcional para um único dono: login por senha, sessões revogáveis, memória salva por pedido explícito, exclusão individual, histórico/notas sincronizados e importação consentida de mensagens antigas. SQLite local ou Supabase para persistir no Render; [configuração](docs/personal.md).
@@ -146,11 +146,12 @@ Veja [a instalação do modelo e a conexão pelo celular](docs/ai.md). A integra
 ```text
 src/
   App.tsx                 Turnos de voz, chat, histórico e preferências
-  components/             VoiceScene, núcleo visual e diálogo acessível
+  components/             ParticleOrb, painéis pessoais e diálogo acessível
   hooks/                  Captura/transcrição, síntese e controle
-  lib/                    Cliente HTTP e histórico validado
-  styles.css              Tailwind e estilos responsivos
-  voice.css               Tela central, toque e áreas seguras no celular
+  lib/                    Cliente HTTP, histórico, Canvas e medição de áudio
+  styles.css              Tailwind e estilos dos recursos existentes
+  modern.css              CSS reaproveitado da referência Moderna
+  voice.css               Preferências de áudio e histórico
 server/
   index.ts                Inicialização e encerramento
   app.ts                  Fastify, validação e arquivos estáticos
@@ -256,3 +257,7 @@ Vitest cobre cálculos válidos/inválidos e falados, API real por injeção Fas
 5. Adicionar PWA/cache com estratégia offline — o modo servidor exige a API em execução; Pages precisa carregar os arquivos estáticos — e ampliar testes de acessibilidade com leitores de tela.
 
 JARVIS AI é um projeto independente de portfólio. Não possui afiliação com Marvel, Microsoft ou seus produtos.
+
+## Interface Moderna
+
+A interface usa o HTML/CSS e o Canvas da referência aprovada. Veja [como revisar a prévia, os fluxos reais e as verificações visuais](docs/modern-interface.md). As alterações de interface podem ser revisadas localmente antes de cada publicação.

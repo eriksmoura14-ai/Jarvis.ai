@@ -17,7 +17,9 @@ test('pesquisa automática exige backend, sem botão web, e preserva fontes', as
     await route.fulfill({ headers, json: { id: 'search', message: 'Os preços do PS5 variam conforme a oferta [1].', createdAt: new Date().toISOString(), provider: 'groq', command: 'search', sources: [{ title: 'Informações do PS5', url: 'https://www.playstation.com/pt-br/ps5/', snippet: 'Informações sobre modelos e ofertas.' }], webSearch: { query: 'preço PS5 hoje', engine: 'bing', searchedAt: new Date().toISOString() } } });
   });
   await page.reload();
-  await expect(page.getByText(/Pesquisa automática ativa/)).toBeVisible();
+  await page.getByRole('button', { name: 'Preferências' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Pesquisa automática ativa');
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('Qual o preço do PS5 hoje?');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.getByRole('region', { name: 'Fontes da pesquisa' })).toBeVisible();

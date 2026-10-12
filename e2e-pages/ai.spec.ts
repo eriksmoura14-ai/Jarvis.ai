@@ -14,9 +14,9 @@ test('conecta backend, envia contexto recente, mantém notas locais e restaura a
   await page.getByRole('button', { name: 'Preferências' }).click();
   await page.getByRole('textbox', { name: 'Endereço do backend' }).fill(endpoint);
   await page.getByRole('button', { name: 'Conectar IA', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Backend verificado');
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('Backend verificado');
+  await expect(page.getByRole('dialog')).toContainText('IA configurada · Groq');
   await page.getByRole('button', { name: 'Fechar janela' }).click();
-  await expect(page.getByText('IA configurada · Groq').last()).toBeVisible();
   const send = async (message: string) => {
     await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill(message);
     await page.getByRole('button', { name: 'Enviar mensagem' }).click();
@@ -31,8 +31,10 @@ test('conecta backend, envia contexto recente, mantém notas locais e restaura a
   await expect(page.getByRole('log')).toContainText('Nota salva: estudar React');
   expect(conversations).toHaveLength(2);
   await page.reload();
-  await expect(page.getByText('IA configurada · Groq').last()).toBeVisible();
-  expect(await page.locator('.message-badge', { hasText: /^IA$/ }).count()).toBe(2);
+  await page.getByRole('button', { name: 'Preferências' }).click();
+  await expect(page.getByRole('dialog')).toContainText('IA configurada · Groq');
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
+  expect(await page.locator('.message-assistant[data-provider="groq"]').count()).toBe(2);
   await page.getByRole('button', { name: 'Preferências' }).click();
   await expect(page.getByRole('textbox', { name: 'Endereço do backend' })).toHaveValue(endpoint);
   await page.getByRole('button', { name: 'Usar somente comandos locais' }).click();
@@ -59,7 +61,9 @@ test('backend indisponível preserva texto e não interrompe comandos locais', a
   await page.addInitScript(endpoint => localStorage.setItem('jarvis.backend.v1', endpoint), endpoint);
   await page.route(`${endpoint}/**`, route => route.abort('failed'));
   await page.goto('./');
-  await expect(page.getByText('IA indisponível').last()).toBeVisible();
+  await page.getByRole('button', { name: 'Preferências' }).click();
+  await expect(page.getByRole('dialog')).toContainText('IA indisponível');
+  await page.getByRole('button', { name: 'Fechar janela' }).click();
   await page.getByRole('textbox', { name: 'Sua mensagem para JARVIS' }).fill('Explique um buraco negro');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect(page.getByRole('alert')).toContainText('Sem conexão');

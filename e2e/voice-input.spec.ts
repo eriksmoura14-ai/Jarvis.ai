@@ -6,15 +6,15 @@ test('eventos atrasados de uma escuta concluída não reabrem microfone nem alte
   let requests = 0;
   page.on('request', request => { if (request.url().endsWith('/api/chat') && request.method() === 'POST') requests++; });
   await page.getByRole('button', { name: 'Falar com JARVIS', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('À escuta');
+  await expect(page.getByRole('status')).toContainText('Ouvindo você');
   await completeRecognition(page, 'calcular dois mais cinco');
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   // Deterministically reproduce the late onstart that raced the end event in CI.
   await page.evaluate(() => {
     const state = (window as unknown as { voiceTest: { recognition: { onstart: () => void } } }).voiceTest;
     state.recognition.onstart();
   });
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await expect(page.getByRole('button', { name: 'Interromper resposta', exact: true })).toBeVisible();
   await page.evaluate(() => {
     const state = (window as unknown as { voiceTest: { recognition: { onresult: (event: unknown) => void; onerror: (event: { error: string }) => void; onend: () => void } } }).voiceTest;
@@ -22,9 +22,9 @@ test('eventos atrasados de uma escuta concluída não reabrem microfone nem alte
     state.recognition.onerror({ error: 'network' });
     state.recognition.onend();
   });
-  await expect(page.getByRole('status')).toContainText('Falando');
+  await expect(page.getByRole('status')).toContainText('Respondendo');
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await expect(page.locator('.scene-transcript')).toContainText('calcular dois mais cinco');
-  await expect(page.locator('.scene-transcript')).not.toContainText('fala atrasada');
+  await expect(page.locator('.jd-message-log .message-user').last()).toContainText('calcular dois mais cinco');
+  await expect(page.locator('.jd-message-log .message-user').last()).not.toContainText('fala atrasada');
   expect(requests).toBe(1);
 });

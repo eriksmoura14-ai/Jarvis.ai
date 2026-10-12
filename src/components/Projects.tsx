@@ -57,6 +57,26 @@ export function ProjectPriorities({ snapshot, now, onOpen, onPlan, busy }: { sna
   </section>;
 }
 
+export function Tasks({ snapshot, now, onRefresh, onPlan }: { snapshot: PersonalSnapshot; now: Date; onRefresh: () => Promise<void>; onPlan: () => void }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const next = priorities(snapshot.projects ?? [], localDay(now, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
+  const complete = async (projectId: string, taskId: string) => {
+    if (busy) return; setBusy(true); setError('');
+    try { await personalRequest('projects/change', 'POST', { change: { action: 'complete_task', projectId, taskId }, projectsRevision: snapshot.projectsRevision ?? 0 }); await onRefresh(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível concluir a tarefa.'); await onRefresh().catch(() => {}); }
+    finally { setBusy(false); }
+  };
+  return <section className="jd-tasks" aria-label="Suas tarefas">
+    <button data-gamepad className="secondary-button" disabled={busy} onClick={onPlan}>Planejar meu dia</button>
+    <div className="jd-list">{next.map(({ task, project, when }) => <article key={task.id}>
+      <div><strong>{task.title}</strong><small>{project.title} · {when}</small></div>
+      <button data-gamepad className="secondary-button" disabled={busy} aria-label={`Concluir tarefa: ${task.title}`} onClick={() => void complete(project.id, task.id)}>Concluir</button>
+    </article>)}</div>
+    {!next.length && <p>Nenhuma tarefa pendente nos projetos ativos.</p>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
 export function ProposalReview({ proposal, snapshot, busy, onConfirm, onDismiss }: { proposal: ProjectProposal; snapshot: PersonalSnapshot; busy: boolean; onConfirm: () => Promise<void>; onDismiss: () => void }) {
   const change = proposal.change;
   const project = change.action === 'create_project' ? undefined : snapshot.projects?.find(project => project.id === change.projectId);

@@ -1,9 +1,10 @@
+import { knowledge } from '../e2e/ui';
 import { test, expect, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 const headers = { 'X-Jarvis-Client': '1' }; const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 async function enter(page: Page) {
   await page.goto('/'); await page.getByLabel('Senha pessoal').fill('fixture-local-personal-123'); await page.getByRole('button', { name: 'Entrar no JARVIS' }).click();
-  await page.getByRole('button', { name: 'Notas do Obsidian', exact: true }).click();
+  await knowledge(page);
 }
 test('vinculação Android revela chave uma vez e revoga sem expor notas no armazenamento local', async ({ page }) => {
   await enter(page); await page.getByText('Conectar Obsidian do Android', { exact: true }).click();
@@ -14,7 +15,7 @@ test('vinculação Android revela chave uma vez e revoga sem expor notas no arma
   const deviceHeaders = { ...headers, Authorization: `Bearer ${token}` };
   expect((await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: body })).status()).toBe(200);
   await page.getByRole('button', { name: 'Ocultar chave' }).click(); await expect(tokenInput).toHaveCount(0);
-  await page.reload(); await page.getByRole('button', { name: 'Notas do Obsidian', exact: true }).click(); await page.getByText('Conectar Obsidian do Android', { exact: true }).click(); await expect(tokenInput).toHaveCount(0);
+  await page.reload(); await knowledge(page); await page.getByText('Conectar Obsidian do Android', { exact: true }).click(); await expect(tokenInput).toHaveCount(0);
   await page.getByRole('button', { name: 'Revogar Android de teste', exact: true }).click(); await page.getByRole('button', { name: 'Confirmar revogação', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Revogar Android de teste', exact: true })).toHaveCount(0);
   expect((await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: body })).status()).toBe(401);
@@ -26,7 +27,7 @@ test('editor envia mudança ao plugin e preserva rascunho quando outro aparelho 
   const deviceHeaders = { ...headers, Authorization: `Bearer ${grant.token}` };
   const initial = '# Rotina\nEstudar no celular.';
   await page.request.post('/api/obsidian/sync', { headers: deviceHeaders, data: { changes: [{ path: 'Rotina.md', content: initial, baseHash: null }], known: [] } });
-  await page.reload(); await page.getByRole('button', { name: 'Notas do Obsidian', exact: true }).click();
+  await page.reload(); await knowledge(page);
   await page.getByRole('button', { name: 'Rotina Rotina.md', exact: true }).click(); await page.getByRole('button', { name: 'Editar nota', exact: true }).click();
   const draft = '# Rotina\nTexto digitado pelo Xbox.'; await page.getByLabel('Texto Markdown').fill(draft); await page.getByRole('button', { name: 'Salvar nota', exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('status').filter({ hasText: 'Nota salva' })).toContainText('Nota salva');
@@ -62,7 +63,7 @@ test('sincroniza 121 notas em lotes e mostra capacidade ampliada preservando a p
   const after = await (await page.request.get('/api/personal/data')).json();
   expect(after.library).toHaveLength(before.library.length + 120); expect(after.library.find((note: { id: string }) => note.id === originalSummary.id)).toEqual(originalSummary);
   for (const note of before.library) expect(after.library).toContainEqual(note);
-  await page.reload(); await page.getByRole('button', { name: 'Notas do Obsidian', exact: true }).click();
+  await page.reload(); await knowledge(page);
   await expect(page.getByText(/\d+ de 1\.000 notas.*MB de 10 MB/)).toContainText(`${before.library.length + 120} de 1.000 notas`);
   await page.getByRole('button', { name: 'Objetivo 119 Objetivos/Nota-119.md', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Nota Objetivo 119', exact: true })).toContainText('registrar o plano 119');

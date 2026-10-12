@@ -78,9 +78,9 @@ test('síntese simulada recebe o texto e pode ser interrompida', async ({ page }
     } });
   });
   await page.reload();
-  await page.getByRole('button', { name: 'Ouvir resposta' }).click();
-  expect(await page.evaluate(() => (window as unknown as { testSpeech: { text: string } }).testSpeech.text)).toContain('Olá, sou o JARVIS');
-  await page.getByRole('button', { name: 'Parar leitura', exact: true }).click();
+  await page.getByRole('textbox').fill('hora'); await page.getByRole('button', { name: 'Enviar mensagem' }).click(); await page.getByRole('button', { name: 'Ouvir resposta' }).click();
+  expect(await page.evaluate(() => (window as unknown as { testSpeech: { text: string } }).testSpeech.text)).toContain('Agora são');
+  await page.getByRole('button', { name: 'Interromper resposta', exact: true }).click();
   expect(await page.evaluate(() => (window as unknown as { testSpeech: { canceled: boolean } }).testSpeech.canceled)).toBe(true);
 });
 async function pressGamepad(page: Page, index: number) {
@@ -99,15 +99,16 @@ test('controle simulado navega com direcional, ativa com A e fecha com B', async
     Object.defineProperty(navigator, 'getGamepads', { value: () => [pad] });
   });
   await page.reload();
-  await expect(page.getByText('Controle detectado · A para ativar')).toBeVisible();
-  await page.getByRole('button', { name: 'Assistente', exact: true }).focus();
+  await page.getByRole('button', { name: 'Conversa', exact: true }).focus();
   await pressGamepad(page, 13);
-  await expect(page.getByRole('button', { name: 'Minhas notas' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Projetos' })).toBeFocused();
   await pressGamepad(page, 13);
-  await expect(page.getByRole('button', { name: 'Comandos', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Tarefas', exact: true })).toBeFocused();
   await pressGamepad(page, 0);
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tarefas', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Preferências' }).click();
+  await expect(page.getByText('Controle detectado · A para ativar')).toBeVisible();
   await pressGamepad(page, 1);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Comandos', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Preferências' })).toBeFocused();
 });
