@@ -2,7 +2,7 @@ import type { AssistantProvider, ChatResponse } from '../../shared/contracts.js'
 import { MAX_SEARCH_QUERY, MAX_SEARCH_SOURCES, searchQuery, automaticSearchQuery } from '../../shared/search.js';
 import { SearchError, WebSearch, type SearchResults } from '../search.js';
 import { searchIntent } from '../search-intent.js';
-import { personalQuestion, validatedPlan, type AssistantInput, type SearchPlan } from '../interpretation.js';
+import { personalQuestion, projectActionQuestion, validatedPlan, type AssistantInput, type SearchPlan } from '../interpretation.js';
 import { HybridProvider } from './hybrid.js';
 import { ModelError } from './model.js';
 import type { ProjectChange } from '../../shared/projects.js';
@@ -16,7 +16,7 @@ export class ResearchProvider implements AssistantProvider {
     // Personal actions stay private. Models can only propose mutations.
     const commandText = request.message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
     const localPersonal = /^(?:anot(?:ar|e)|nota)\s+|^(?:apagar notas|notas|minhas notas|listar notas)[.!?]*$/i.test(commandText);
-    const projectIntent = !!request.projectData && /^(?:jarvis[,.:!]?\s+)?(?:crie|criar|organize|organizar|monte|montar|planeje|planejar|conclui|terminei|adicione|adicionar)\b/i.test(commandText) && /\b(?:projetos?|tarefas?|planos?|etapas?)\b/i.test(commandText);
+    const projectIntent = !!request.projectData && projectActionQuestion(request.message);
     if (localPersonal || personalQuestion(request.message) || projectIntent || request.knowledgeOnly || request.privateOnly) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
     const explicit = automaticSearchQuery(request.message);
     let plan: SearchPlan | undefined;

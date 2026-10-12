@@ -133,4 +133,15 @@ describe('biblioteca Markdown pessoal', () => {
     expect(validKnowledgeSources(found)).toBe(true);
     expect(markdownTitle({ path: 'Fallback.md', content: '---\ntitle: Outra\n---\n```md\n# Falso\n```\nTexto comum' })).toBe('Fallback');
   });
+  it('encontra metas, pendências e horizontes com vocabulário diferente, preservando os trechos originais', () => {
+    const make = (title: string, content: string): KnowledgeNote => ({ id: randomUUID(), path: `${title}.md`, title, bytes: content.length, revision: 1, updatedAt: '2026-10-01T10:00:00Z', content });
+    const notes = [make('Metas pessoais', '# Metas pessoais\nConseguir uma bolsa para a faculdade. Isso está planejado, sem aprovação confirmada.'),
+      make('Pendências', '# Pendências\nConferir os documentos da candidatura.'), make('Calendário', '# Calendário\n## Horizonte\nCandidatura em 2027, data exata a confirmar.'),
+      make('Culinária', '# Culinária\nUma receita de arroz.')];
+    const goals = retrieveKnowledge(notes, 'Quais são meus objetivos?');
+    expect(goals[0]).toMatchObject({ title: 'Metas pessoais', excerpt: expect.stringContaining('sem aprovação confirmada') });
+    expect(retrieveKnowledge(notes, 'Quais tarefas estão pendentes?')[0].title).toBe('Pendências');
+    expect(retrieveKnowledge(notes, 'Qual o prazo?')[0]).toMatchObject({ title: 'Calendário', excerpt: expect.stringContaining('data exata a confirmar') });
+    expect(goals.some(source => source.title === 'Culinária')).toBe(false); expect(validKnowledgeSources(goals)).toBe(true);
+  });
 });

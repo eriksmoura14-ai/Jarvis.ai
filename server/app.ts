@@ -13,7 +13,8 @@ import { ResearchProvider } from './providers/research.js';
 import { SearchError, WebSearch } from './search.js';
 import type { AssistantProvider } from './providers/types.js';
 import { MAX_CONTEXT_CHARACTERS, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_LENGTH, type ChatRequest, type ChatResponse, type Message, type ChatStreamEvent } from '../shared/contracts.js';
-import { validSources, validSearchInfo } from '../shared/search.js';
+import { validSources, validSearchInfo, automaticSearchQuery } from '../shared/search.js';
+import { memorySlot } from '../shared/memory.js';
 import { PersonalAuth, type PersonalConfig } from './personal/auth.js';
 import { PersonalError, PersonalStore, SQLiteDocument, SupabaseDocument, type DocumentBackend } from './personal/store.js';
 import { memoryCommand } from './personal/commands.js';
@@ -225,12 +226,18 @@ export async function buildApp(options: AppOptions = {}) {
       const snapshot = record?.snapshot;
       const resolution = resolveConversation(record?.context ?? request.body.context ?? [], request.body.message, record?.lastAnswerFromKnowledge);
       const plan = record ? dailyPlan(request.body, record.snapshot, record.knowledge) : undefined;
-      let knowledgeContext = plan?.sources ?? (record ? retrieveKnowledge(record.knowledge, resolution.query) : []);
-      const body: AssistantInput = record && !plan ? { ...request.body, sessionId: 'owner', context: record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
-        personalMemory: record.snapshot.memories.map(memory => memory.content), personalNotes: selectedNotes(record.snapshot.notes, resolution.query),
-        projectData: selectedProjects(record.snapshot.projects ?? [], resolution.query), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
-        knowledgeContext, knowledgeCatalog: knowledgeCatalog(record.knowledge, resolution.query), knowledgeCount: record.knowledge.length,
-        readKnowledge: plan => { controller.signal.throwIfAborted(); knowledgeContext = readKnowledge(record.knowledge, plan); return knowledgeContext; },
+      const publicResearch = !resolution.privateOnly && automaticSearchQuery(request.body.message) !== undefined;
+      let knowledgeContext = plan?.sources ?? (record && !publicResearch ? retrieveKnowledge(record.knowledge, resolution.query) : []);
+      // A named public research request needs public evidence, not the vault's
+      // catalog or earlier private conversation. Keep private terms on the
+      // server for validating tools, and only the saved form of address in the prompt.
+      const body: AssistantInput = record && !plan ? { ...request.body, sessionId: 'owner', context: publicResearch ? [] : record.context, searchContext: record.searchContext, publicSearchTerms: record.publicSearchTerms,
+        personalMemory: (publicResearch ? record.snapshot.memories.filter(memory => memorySlot(memory.content) === 'address').slice(-1) : record.snapshot.memories).map(memory => memory.content),
+        privateContextTerms: [...record.snapshot.memories.map(memory => memory.content), ...record.snapshot.notes.map(note => note.content), ...record.context.map(turn => turn.content)].join('\n'),
+        personalNotes: publicResearch ? [] : selectedNotes(record.snapshot.notes, resolution.query),
+        projectData: publicResearch ? undefined : selectedProjects(record.snapshot.projects ?? [], resolution.query), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
+        knowledgeContext, knowledgeCatalog: publicResearch ? undefined : knowledgeCatalog(record.knowledge, resolution.query), knowledgeCount: publicResearch ? undefined : record.knowledge.length,
+        readKnowledge: publicResearch ? undefined : plan => { controller.signal.throwIfAborted(); knowledgeContext = readKnowledge(record.knowledge, plan); return knowledgeContext; },
         privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: resolution.knowledgeOnly, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject }
         : { ...request.body, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject };
       const prepared = performance.now();

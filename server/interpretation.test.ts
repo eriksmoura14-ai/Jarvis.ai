@@ -18,6 +18,38 @@ const feed = (topic: string) => new Response(`<rss><channel><item><title>${topic
 async function setup(options: Parameters<typeof buildApp>[0] = {}) { const app = await buildApp({ databasePath: ':memory:', ...options }); apps.push(app); return app; }
 
 describe('interpretação e pesquisa autônoma', () => {
+  it('pesquisa pública envia só o tratamento salvo, sem catálogo, notas ou conversa privada; o validador conserva a proteção', async () => {
+    const prompts: { messages: { content: string }[]; tools?: { function: { name: string } }[] }[] = [];
+    const answers = [text('Vamos rever SegredoConversa.'), tool(['IA'], true), text('Há novidades de IA, senhor [1].'), tool(['IA SegredoRapido'], true)];
+    const modelFetch = vi.fn<typeof fetch>(async (_url, init) => { prompts.push(JSON.parse(String(init?.body))); return answers.shift()!; });
+    const searchFetch = vi.fn<typeof fetch>(async () => feed('Novidades de IA'));
+    const app = await setup({ ai, modelFetch, searchFetch, personal: { password: 'fixture-public-scope-123', secure: false } });
+    const login = await app.inject({ method: 'POST', url: '/api/personal/login', headers: { 'x-jarvis-client': '1' }, payload: { password: 'fixture-public-scope-123' } });
+    const headers = { 'x-jarvis-client': '1', cookie: String(login.headers['set-cookie']).split(';')[0] };
+    const send = (message: string) => app.inject({ method: 'POST', url: '/api/chat', headers, payload: question(message) });
+    const data = async () => (await app.inject({ url: '/api/personal/data', headers })).json();
+    await send('meu nome é Maria'); await send('me chame de senhor'); await send('lembre que SegredoMemoria'); await send('anotar SegredoRapido');
+    const imported = await app.inject({ method: 'POST', url: '/api/personal/knowledge/import', headers, payload: { files: [{ path: 'IA-Privada.md', content: '# IA privada\nSegredoBiblioteca.' }], replace: false, libraryRevision: (await data()).libraryRevision } });
+    expect(imported.statusCode).toBe(200);
+    await send('O que eu anotei sobre SegredoConversa?'); const before = await data();
+    const result = (await send('Pesquise novidades de IA')).json();
+    expect(result).toMatchObject({ command: 'search', provider: 'groq', sources: [{ title: 'Novidades de IA' }] });
+    expect(result.knowledgeSources).toBeUndefined();
+    for (const prompt of prompts.slice(1)) {
+      const encoded = JSON.stringify(prompt.messages);
+      expect(encoded).toContain('me chame de senhor');
+      expect(encoded).not.toMatch(/Maria|SegredoMemoria|SegredoRapido|SegredoConversa|SegredoBiblioteca|IA-Privada/);
+    }
+    expect(prompts[1].tools?.map(tool => tool.function.name)).toEqual(['search_web']);
+    const rejected = (await send('Pesquise IA hoje')).json();
+    expect(rejected.message).toContain('assunto público'); expect(rejected.webSearch).toBeUndefined();
+    expect(searchFetch).toHaveBeenCalledTimes(1);
+    const after = await data();
+    expect(after.memories).toEqual(before.memories); expect(after.notes).toEqual(before.notes); expect(after.library).toEqual(before.library);
+    for (const privateWord of ['SegredoMemoria', 'SegredoRapido', 'SegredoConversa']) {
+      expect(validatedPlan({ queries: ['IA ' + privateWord], news: true }, { ...question('IA hoje'), privateContextTerms: privateWord })).toBeUndefined();
+    }
+  });
   it('pesquisa uma pergunta atual mesmo se o modelo responder sem solicitar a ferramenta e resume em parágrafos', async () => {
     const modelFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(text('Posso responder usando minha memória.'))
       .mockResolvedValueOnce(text('## Resumo\n- Há novidades de IA [1].\n- O contexto está nos trechos consultados [1].'));

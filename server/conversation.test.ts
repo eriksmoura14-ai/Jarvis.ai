@@ -24,4 +24,15 @@ describe('continuidade e fonte da conversa', () => {
     expect(resolveConversation(history('Oi'), 'no Obsidian').subject).toBeUndefined();
     expect(resolveConversation([], 'Resuma').clarification).toContain('Qual assunto');
   });
+  it.each(['E qual o próximo passo?', 'Por onde começo?', 'E qual o prazo?', 'Em que etapa estamos?'])('mantém o objetivo e a fonte pessoal numa pergunta natural: %s', message => {
+    const context = history('Quais são meus objetivos no Obsidian?', 'Explique melhor');
+    expect(resolveConversation(context, message, true)).toMatchObject({ subject: 'Quais são meus objetivos no Obsidian?', knowledgeOnly: true, privateOnly: true });
+    expect(resolveConversation(history('Oi'), message).clarification).toContain('De qual objetivo');
+    expect(resolveConversation(context, 'Qual o próximo passo para aprender Docker?')).toMatchObject({ knowledgeOnly: false, subject: undefined });
+  });
+  it('mantém propostas de projetos privadas mesmo quando o texto menciona novidades', () => {
+    expect(resolveConversation([], 'Crie um projeto para estudar as últimas novidades de IA').privateOnly).toBe(true);
+    expect(resolveConversation(history('Crie um projeto para estudar as últimas novidades de IA'), 'E qual o prazo?').privateOnly).toBe(true);
+    expect(resolveConversation([], 'Pesquise notícias de projetos de IA').privateOnly).toBe(false);
+  });
 });

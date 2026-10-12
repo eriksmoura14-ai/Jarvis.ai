@@ -43,8 +43,18 @@ function chunks(note: KnowledgeNote) {
   flush(); return result;
 }
 const stop = new Set('a o as os e de do da dos das em no na nos nas para por com que qual quais como eu meu minha meus minhas me voce jarvis oi ola sobre quero saber ja foi sao uma um umas uns isso este esta esses essas ser ter tem tenho pode poderia favor favorzinho segundo cerebro obsidian cofre vault biblioteca nota notas anotacao anotacoes arquivo arquivos consultar consulte pesquise pesquisa pesquisar procure busque buscar mostre mostrar explique resumo resuma estudei estudos aprendi lembra lembrar'.split(' '));
+// A small, explicit vocabulary joins common ways of asking about the same
+// personal records. It changes retrieval only; excerpts remain the real text.
+const equivalents = new Map([
+  ...['meta', 'objetivo', 'goal', 'plano', 'planejamento'].map(word => [word, 'objetivo'] as const),
+  ...['tarefa', 'pendencia', 'etapa', 'passo', 'task'].map(word => [word, 'tarefa'] as const),
+  ...['prazo', 'horizonte', 'deadline', 'cronograma'].map(word => [word, 'prazo'] as const),
+]);
 const terms = (value: string) => normalizeKnowledge(value).replace(/\b(?:inteligencia artificial|artificial intelligence|ia|ai)\b/g, ' inteligenciaartificial ')
-  .match(/[\p{L}\p{N}]+/gu)?.filter(word => word.length >= 2 && !stop.has(word)).map(word => word.length > 4 && word.endsWith('s') ? word.slice(0, -1) : word) ?? [];
+  .match(/[\p{L}\p{N}]+/gu)?.filter(word => word.length >= 2 && !stop.has(word)).map(word => {
+    const singular = word.length > 4 && word.endsWith('s') ? word.slice(0, -1) : word;
+    return equivalents.get(singular) ?? singular;
+  }) ?? [];
 export function knowledgeCatalog(notes: KnowledgeNote[], query: string) {
   const wanted = new Set(terms(query));
   const sorted = notes.map(note => ({ note, score: terms(note.title + ' ' + note.path).filter(term => wanted.has(term)).length }))

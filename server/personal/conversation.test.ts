@@ -22,6 +22,29 @@ async function setup(extra: Parameters<typeof buildApp>[0] = {}) {
   return { app, chat, data, headers, importFiles };
 }
 describe('interpretação com dados pessoais atuais', () => {
+  it('consulta metas e mantém o assunto em perguntas sobre prazo e próximo passo sem pesquisar', async () => {
+    const prompts: { messages: { content: string }[]; tools?: { function: { name: string } }[] }[] = [];
+    const modelFetch = vi.fn<typeof fetch>(async (_url, init) => {
+      prompts.push(JSON.parse(String(init?.body)));
+      return text('A candidatura está planejada para 2027; a data exata ainda precisa ser confirmada [N1].');
+    });
+    const searchFetch = vi.fn<typeof fetch>();
+    const { chat, importFiles, data, app, headers } = await setup({ ai, modelFetch, searchFetch });
+    await importFiles([{ path: 'Metas.md', content: '# Metas pessoais\n## Horizonte\nConseguir uma bolsa para a faculdade. Candidatura em 2027, data exata a confirmar. Não há aprovação registrada.' }]);
+    const before = await data();
+    for (const message of ['Quais são meus objetivos?', 'E qual o prazo?', 'Por onde começo?']) {
+      const result = (await chat(message)).json();
+      expect(result.knowledgeSources[0]).toMatchObject({ path: 'Metas.md', excerpt: expect.stringContaining('Não há aprovação registrada') });
+      expect(result.webSearch).toBeUndefined();
+      expect(prompts.at(-1)?.messages.at(-2)?.content).toContain('data exata a confirmar');
+      expect(prompts.at(-1)?.tools?.some(tool => tool.function.name === 'search_web')).toBe(false);
+    }
+    expect(modelFetch).toHaveBeenCalledTimes(3); expect(searchFetch).not.toHaveBeenCalled();
+    expect((await data()).library).toEqual(before.library);
+    await app.inject({ method: 'DELETE', url: '/api/personal/history', headers });
+    expect((await chat('E qual o prazo?')).json().message).toContain('De qual objetivo');
+    expect(modelFetch).toHaveBeenCalledTimes(3);
+  });
   it.each([false, true])('responde aos objetivos registrados quando a IA nega os dados fornecidos, stream=%s', async stream => {
     const refusal = 'Não tenho detalhes suficientes sobre os seus objetivos futuros. Você pode me dizer quais são ou indicar a nota onde eles estão descritos?';
     const prompts: { messages: { role: string; content: string }[]; tools?: { function: { name: string } }[] }[] = [];
@@ -64,7 +87,8 @@ describe('interpretação com dados pessoais atuais', () => {
     const result = (await chat('quais sao meus futuros objetivos', { webSearch: true })).json();
     expect(result).toMatchObject({ provider: 'local', command: 'knowledge', message: expect.stringContaining('Aprender Rust'), knowledgeSources: [{ id, path: 'Direcao.md' }] });
     const first = JSON.parse(String(modelFetch.mock.calls[0][1]?.body)); const final = JSON.parse(String(modelFetch.mock.calls[1][1]?.body));
-    expect(first.messages.some((message: { content: string }) => message.content.includes('Plano, sem curso concluído'))).toBe(false);
+    // "Objetivos" now finds a "Metas" table before the optional read as well.
+    expect(first.messages.some((message: { content: string }) => message.content.includes('Plano, sem curso concluído'))).toBe(true);
     expect(final.messages.at(-2).content).toContain('Plano, sem curso concluído'); expect(final.tools).toBeUndefined();
     expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).not.toHaveBeenCalled();
     expect((await data()).history.at(-1).content).toBe(result.message);

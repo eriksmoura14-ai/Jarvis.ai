@@ -12,6 +12,8 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 **Interpretação de pedidos:** [conversa contextual, consulta às notas pessoais e pesquisa automática](docs/interpretation.md). Continuações como “no Obsidian”, “explique melhor” e “resuma” usam o assunto ativo. A IA pode consultar até três notas pelo catálogo de títulos quando a busca por palavras não basta, ou solicitar até três buscas públicas complementares. Comandos e pedidos pessoais usam dados privados; perguntas atuais acionam a pesquisa automaticamente, sem seletor web. Respostas usam parágrafos por padrão.
 
+Perguntas como “e qual o prazo?” e “por onde começo?” também acompanham o objetivo anterior. A busca pessoal reconhece equivalências selecionadas entre metas, objetivos e planos. Pesquisas claramente públicas evitam enviar o catálogo e o histórico pessoal desnecessariamente, preservando a forma de tratamento e as validações do servidor.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
 **Projetos e tarefas:** [objetivos, etapas, prazos, progresso e propostas do chat para revisar](docs/projects.md). No modo pessoal, os dados acompanham sua conta no celular e computador. O painel funciona sem IA; planos propostos pela IA só são aplicados após **Confirmar proposta**. Reutiliza o Supabase existente, sem nova chave ou SQL.

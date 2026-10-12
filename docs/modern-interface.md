@@ -40,6 +40,8 @@ O volume do microfone é medido apenas quando já existe um MediaStream autoriza
 
 `e2e/modern.spec.ts` carrega o HTML original nas mesmas dimensões da página React, fixa o ruído e pausa os movimentos. Normaliza apenas saudação, conexão e aviso de privacidade para comparar medidas, fontes, cores, bordas, espaçamentos e caminhos SVG. O CSS original não é alterado no teste. A comparação também verifica o cartão após enviar uma pergunta, usando pergunta destacada e resposta em texto como no original. As capturas usam identidade controlada de teste, sem exportar os dados da conta. Desktop usa 1440×1000; celular usa o viewport Pixel 7, e as capturas de revisão usam 390×844.
 
+O campo de mensagem mantém uma linha visível com altura natural, como o input da referência. Isso acompanha as métricas da fonte disponível no sistema, preservando as dimensões no CI e em navegadores com fontes diferentes, sem perder Shift + Enter para inserir quebras de linha.
+
 Os testes também cobrem transições ouvir/pensar/falar/interromper, permissão negada, ausência de voz, captura/reprodução de áudio, cache/cancelamento, histórico, confirmação de propostas, conta e sincronização do Obsidian. Testes unitários conferem limpeza de recursos e continuidade do movimento. Desempenho e áudio em um celular físico e no Edge do Xbox ainda precisam de conferência no aparelho.
 
 ```sh

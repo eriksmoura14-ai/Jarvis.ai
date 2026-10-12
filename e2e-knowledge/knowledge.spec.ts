@@ -77,7 +77,8 @@ test('esclarece a fonte, entende o tema respondido e mantém a continuação nas
   await page.request.delete('/api/personal/history', { headers: client });
   const initial = await (await page.request.get('/api/personal/data')).json();
   const imported = await page.request.post('/api/personal/knowledge/import', { headers: client, data: {
-    files: [{ path: 'Interpretacao.md', content: '# React contextual\nComponentes compõem interfaces.' }], replace: false, libraryRevision: initial.libraryRevision,
+    files: [{ path: 'Interpretacao.md', content: '# React contextual\nComponentes compõem interfaces.' },
+      { path: 'Planejamento/Metas.md', content: '# Metas pessoais\n## Horizonte\nConseguir uma bolsa para a faculdade. Candidatura em 2027, data exata a confirmar. Não há aprovação registrada.' }], replace: false, libraryRevision: initial.libraryRevision,
   } });
   expect(imported.ok()).toBe(true); await page.reload();
   await expect(page.getByLabel('Pesquisar na web')).toHaveCount(0);
@@ -92,4 +93,11 @@ test('esclarece a fonte, entende o tema respondido e mantém a continuação nas
   await expect(messages).not.toContainText('Não encontrei trechos');
   const current = await (await page.request.get('/api/personal/data')).json();
   expect(current.history.at(-1).knowledgeSources[0].path).toBe('Interpretacao.md'); expect(current.history.at(-1).webSearch).toBeUndefined();
+  await send('Quais são meus objetivos no Obsidian?');
+  await expect(page.locator('.message-assistant').last()).toContainText('Conseguir uma bolsa');
+  await send('E qual o prazo?');
+  await expect(page.locator('.message-assistant').last()).toContainText('2027, data exata a confirmar');
+  await expect(page.locator('.message-assistant').last()).toContainText('Não há aprovação registrada');
+  const final = await (await page.request.get('/api/personal/data')).json();
+  expect(final.history.at(-1).knowledgeSources[0].path).toBe('Planejamento/Metas.md'); expect(final.history.at(-1).webSearch).toBeUndefined();
 });
