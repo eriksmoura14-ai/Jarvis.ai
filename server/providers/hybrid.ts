@@ -8,6 +8,7 @@ export class HybridProvider implements AssistantProvider {
   readonly name: 'groq' | 'ollama';
   private active = 0;
   private requests: number[] = [];
+  private quotaPause?: { until: number; error: ModelError };
   constructor(private local: LocalProvider, readonly model: ModelProvider, private claimDailyRequest: (day: string) => boolean | Promise<boolean>) { this.name = model.name; }
   async respond(request: ChatRequest, signal?: AbortSignal, onText?: (text: string) => void) {
     const local = await this.local.respond(request);
@@ -33,12 +34,21 @@ export class HybridProvider implements AssistantProvider {
         const run = async () => {
           signal?.throwIfAborted();
           const now = Date.now();
+          // Respect a provider's Retry-After across turns and research passes.
+          // When absent, a short local backoff prevents hammering; it does not
+          // claim that the provider's quota resets after that interval.
+          if (this.quotaPause && now < this.quotaPause.until) throw this.quotaPause.error;
           this.requests = this.requests.filter(time => now - time < 60_000);
           if (this.requests.length >= 6) throw new ModelError('A IA está ocupada. Aguarde um minuto ou use os comandos locais.', 429);
           this.requests.push(now);
           if (!await this.claimDailyRequest(new Date(now).toISOString().slice(0, 10))) throw new ModelError('O limite diário de IA deste servidor foi atingido. Os comandos locais continuam disponíveis.', 429);
           signal?.throwIfAborted();
-          const result = await this.model.respond(input, signal, recovered ? undefined : onText, results, tools);
+          let result;
+          try { result = await this.model.respond(input, signal, recovered ? undefined : onText, results, tools); }
+          catch (error) {
+            if (error instanceof ModelError && error.statusCode === 429) this.quotaPause = { until: Date.now() + Math.max(1000, error.retryAfterMs ?? 60_000), error };
+            throw error;
+          }
           if (recovered && result.message) onText?.(result.message);
           return result;
         };

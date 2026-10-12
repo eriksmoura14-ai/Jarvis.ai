@@ -1,5 +1,5 @@
 import type { AssistantProvider, ChatResponse } from '../../shared/contracts.js';
-import { MAX_SEARCH_QUERY, MAX_SEARCH_SOURCES, searchQuery, automaticSearchQuery } from '../../shared/search.js';
+import { MAX_SEARCH_QUERY, MAX_SEARCH_SOURCES, searchQuery, automaticSearchQuery, vagueSearchSubject } from '../../shared/search.js';
 import { SearchError, WebSearch, type SearchResults } from '../search.js';
 import { searchIntent } from '../search-intent.js';
 import { personalQuestion, projectActionQuestion, validatedPlan, type AssistantInput, type SearchPlan } from '../interpretation.js';
@@ -17,16 +17,18 @@ export class ResearchProvider implements AssistantProvider {
     const commandText = request.message.trim().replace(/^jarvis[,.:!]?\s+/i, '');
     const localPersonal = /^(?:anot(?:ar|e)|nota)\s+|^(?:apagar notas|notas|minhas notas|listar notas)[.!?]*$/i.test(commandText);
     const projectIntent = !!request.projectData && projectActionQuestion(request.message);
-    if (localPersonal || personalQuestion(request.message) || projectIntent || request.knowledgeOnly || request.privateOnly) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
-    const explicit = automaticSearchQuery(request.message);
+    if (localPersonal || (personalQuestion(request.message) && !request.publicQuery) || projectIntent || request.knowledgeOnly || request.privateOnly) return this.assistant.respond({ ...request, webSearch: false }, signal, onText);
+    const rawSearch = searchQuery(request);
+    if (!request.publicQuery && rawSearch !== undefined && vagueSearchSubject(rawSearch)) return { message: 'Sobre qual assunto você quer que eu pesquise?', command: 'conversation', provider: 'local' };
+    const explicit = request.publicQuery ?? automaticSearchQuery(request.message);
     let plan: SearchPlan | undefined;
     if (explicit !== undefined || request.webSearch) {
       const query = explicit ?? searchQuery(request)!;
       if (!query.trim() || query.length > MAX_SEARCH_QUERY) throw new SearchError('Use uma pesquisa com até 300 caracteres.', 400);
       plan = { queries: [query], news: searchIntent(query).news };
-      if (this.assistant instanceof HybridProvider) {
-        // Explicit requests still benefit from complementary queries. If planning fails,
-        // the public subject remains searchable without relying on the model.
+      if (this.assistant instanceof HybridProvider && !request.publicQuery && /\b(?:compare|comparar|versus|vs|entre)\b|\S\s+e\s+\S/i.test(request.message)) {
+        // Plan only comparisons/multiple subjects. A named single subject can
+        // be searched directly, keeping one model call for the actual summary.
         try {
           const proposal = await this.assistant.planResearch(request, signal);
           if (proposal.projectChange) return proposal;

@@ -18,6 +18,8 @@
     "start": "node --use-env-proxy --env-file-if-exists=.env dist-server/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "evaluate:routing": "node --import tsx scripts/evaluate-routing.mjs",
+    "evaluate:model": "node --use-env-proxy --env-file-if-exists=.env --import tsx scripts/evaluate-model.mjs",
     "test:e2e": "playwright test",
     "check": "npm run test && npm run build && npm run test:e2e",
     "test:personal": "playwright test --config playwright.personal.config.ts --project desktop-chromium && playwright test --config playwright.personal.config.ts --project mobile-chromium",

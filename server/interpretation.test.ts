@@ -20,7 +20,7 @@ async function setup(options: Parameters<typeof buildApp>[0] = {}) { const app =
 describe('interpretação e pesquisa autônoma', () => {
   it('pesquisa pública envia só o tratamento salvo, sem catálogo, notas ou conversa privada; o validador conserva a proteção', async () => {
     const prompts: { messages: { content: string }[]; tools?: { function: { name: string } }[] }[] = [];
-    const answers = [text('Vamos rever SegredoConversa.'), tool(['IA'], true), text('Há novidades de IA, senhor [1].'), tool(['IA SegredoRapido'], true)];
+    const answers = [text('Vamos rever SegredoConversa.'), text('Há novidades de IA, senhor [1].'), tool(['IA SegredoRapido'], true)];
     const modelFetch = vi.fn<typeof fetch>(async (_url, init) => { prompts.push(JSON.parse(String(init?.body))); return answers.shift()!; });
     const searchFetch = vi.fn<typeof fetch>(async () => feed('Novidades de IA'));
     const app = await setup({ ai, modelFetch, searchFetch, personal: { password: 'fixture-public-scope-123', secure: false } });
@@ -40,8 +40,8 @@ describe('interpretação e pesquisa autônoma', () => {
       expect(encoded).toContain('me chame de senhor');
       expect(encoded).not.toMatch(/Maria|SegredoMemoria|SegredoRapido|SegredoConversa|SegredoBiblioteca|IA-Privada/);
     }
-    expect(prompts[1].tools?.map(tool => tool.function.name)).toEqual(['search_web']);
-    const rejected = (await send('Pesquise IA hoje')).json();
+    expect(prompts[1].tools).toBeUndefined();
+    const rejected = (await send('Pesquise IA e tecnologia hoje')).json();
     expect(rejected.message).toContain('assunto público'); expect(rejected.webSearch).toBeUndefined();
     expect(searchFetch).toHaveBeenCalledTimes(1);
     const after = await data();
@@ -50,16 +50,15 @@ describe('interpretação e pesquisa autônoma', () => {
       expect(validatedPlan({ queries: ['IA ' + privateWord], news: true }, { ...question('IA hoje'), privateContextTerms: privateWord })).toBeUndefined();
     }
   });
-  it('pesquisa uma pergunta atual mesmo se o modelo responder sem solicitar a ferramenta e resume em parágrafos', async () => {
-    const modelFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(text('Posso responder usando minha memória.'))
-      .mockResolvedValueOnce(text('## Resumo\n- Há novidades de IA [1].\n- O contexto está nos trechos consultados [1].'));
+  it('pesquisa uma pergunta atual diretamente e gasta uma chamada apenas no resumo em parágrafos', async () => {
+    const modelFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(text('## Resumo\n- Há novidades de IA [1].\n- O contexto está nos trechos consultados [1].'));
     const searchFetch = vi.fn<typeof fetch>(async () => feed('Novidades de IA'));
     const app = await setup({ ai, modelFetch, searchFetch });
     const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Tem novidades de IA hoje?') });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ command: 'search', message: 'Há novidades de IA [1]. O contexto está nos trechos consultados [1].' });
     expect(response.json().sources).toHaveLength(1); expect(response.json().knowledgeSources).toBeUndefined();
-    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).toHaveBeenCalled();
+    expect(modelFetch).toHaveBeenCalledTimes(1); expect(searchFetch).toHaveBeenCalled();
     expect(response.json().webSearch.queries).toHaveLength(1);
   });
   it('mantém pesquisa e trechos reais quando a cota do modelo acabou, sem inventar resumo por IA', async () => {
@@ -138,8 +137,8 @@ describe('interpretação e pesquisa autônoma', () => {
     expect(clear.json()).toMatchObject({ command: 'note-clear', message: '1 nota excluída.' });
   });
   it('usa o último tema público em continuações, mas não recupera temas antigos após reiniciar o contexto', async () => {
-    let count = 0;
-    const modelFetch = vi.fn<typeof fetch>(async () => ++count === 2 || count === 4 ? text('Fontes da guerra na Ucrânia [1].') : tool(['guerra na Ucrânia'], true));
+    const answers = [text('Fontes da guerra na Ucrânia [1].'), tool(['guerra na Ucrânia'], true), text('Fontes da guerra na Ucrânia [1].'), tool(['guerra na Ucrânia'], true)];
+    const modelFetch = vi.fn<typeof fetch>(async () => answers.shift()!);
     const searchFetch = vi.fn<typeof fetch>(async () => feed('Guerra na Ucrânia'));
     const app = await setup({ ai, modelFetch, searchFetch, personal: { password: 'fixture-context-login-123', secure: false } });
     const login = await app.inject({ method: 'POST', url: '/api/personal/login', headers: { 'x-jarvis-client': '1' }, payload: { password: 'fixture-context-login-123' } });
@@ -147,11 +146,11 @@ describe('interpretação e pesquisa autônoma', () => {
     const send = (message: string) => app.inject({ method: 'POST', url: '/api/chat', headers, payload: question(message) });
     expect((await send('pesquise notícias sobre a guerra na Ucrânia')).json().command).toBe('search');
     expect((await send('E o que mudou nisso hoje?')).json().command).toBe('search');
-    expect(JSON.parse(modelFetch.mock.calls[2][1]?.body as string).messages[0].content).toContain('Último assunto pesquisado');
+    expect(JSON.parse(modelFetch.mock.calls[1][1]?.body as string).messages[0].content).toContain('Último assunto pesquisado');
     await send('apagar memórias');
     const reply = (await send('E o que mudou nisso hoje?')).json();
     expect(reply.command).toBe('conversation'); expect(reply.message).toContain('Qual tema'); expect(searchFetch).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(modelFetch.mock.calls[4][1]?.body as string).messages[0].content).not.toContain('Último assunto pesquisado');
+    expect(modelFetch).toHaveBeenCalledTimes(3); // clarification after forgetting needs no inference
   });
   it('recusa consultas com fatos privados ausentes do pedido, destinos arbitrários e comandos inventados', async () => {
     const request = { ...question('Tem novidades de IA?'), personalMemory: ['Meu nome é Carlos'], personalNotes: ['Contato secreto: Sofia'], context: [{ role: 'user' as const, content: 'Minha senha é ABCprivado.' }] };
@@ -163,7 +162,7 @@ describe('interpretação e pesquisa autônoma', () => {
     expect(validatedPlan({ queries: ['IA'], news: false }, question('Últimas notícias de IA'))?.news).toBe(true);
     const searchFetch = vi.fn<typeof fetch>();
     const app = await setup({ ai, searchFetch, modelFetch: async () => tool(['IA'], false, 'delete_memories') });
-    const reply = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Tem novidades de IA?') });
+    const reply = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Que avanços ocorreram em IA?') });
     expect(reply.statusCode).toBe(503); expect(searchFetch).not.toHaveBeenCalled();
     expect((await app.inject({ method: 'POST', url: '/api/chat', payload: question('Tem novidades?', { searchContext: { query: 'segredo' } }) })).statusCode).toBe(400);
   });
@@ -200,7 +199,7 @@ describe('interpretação e pesquisa autônoma', () => {
       ? { message: { tool_calls: [{ function: { name: 'search_web', arguments: { queries: ['IA'], news: true } } }] }, done: true }
       : { message: { content: 'Novidades de IA [1].' }, done: true }) + '\n'));
     const app = await setup({ ai: { provider: 'ollama', model: 'fixture-tool-model', baseURL: 'http://127.0.0.1:11434' }, modelFetch: transport, searchFetch: async () => feed('IA') });
-    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Tem novidades de IA?', { stream: true }) });
+    const response = await app.inject({ method: 'POST', url: '/api/chat', payload: question('Que avanços ocorreram em IA?', { stream: true }) });
     const events = response.body.trim().split('\n').map(line => JSON.parse(line));
     expect(events.map(event => event.type)).toEqual(['ready', 'text', 'result']);
     expect(events.at(-1).response).toMatchObject({ provider: 'ollama', command: 'search', message: 'Novidades de IA [1].', sources: [{ title: 'IA' }] });

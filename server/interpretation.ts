@@ -1,12 +1,14 @@
 import type { ChatRequest, WebSearchInfo } from '../shared/contracts.js';
 import { searchQuery } from '../shared/search.js';
 import { validChange, type PersonalProject, type ProjectChange } from '../shared/projects.js';
-import { personalReferenceQuestion, normalizeQuestion } from '../shared/dialogue.js';
+import { personalReferenceQuestion, personalActionQuestion, normalizeQuestion } from '../shared/dialogue.js';
 import { knowledgeQuestion, type KnowledgeSource } from '../shared/knowledge.js';
 
 export interface AssistantInput extends ChatRequest {
   personalMemory?: string[];
   privateContextTerms?: string;
+  // Resolved by server history; never accepted from a frontend request.
+  publicQuery?: string;
   personalNotes?: string[];
   searchContext?: WebSearchInfo;
   publicSearchTerms?: string;
@@ -48,7 +50,7 @@ export const SEARCH_TOOL = { type: 'function', function: {
 export const INTERPRETATION_PROMPT = `\nInterprete a intenção antes de responder. Para conversa, explicações estáveis e informações pessoais, responda normalmente usando o contexto e os dados pessoais disponíveis. Para notícias, informações atuais, links/fontes ou pedidos de pesquisa, solicite search_web; não responda por memória como se tivesse pesquisado. Você pode propor até três consultas complementares, curtas e específicas. Use somente assuntos públicos presentes no pedido atual ou no último assunto público de pesquisa fornecido, sem copiar memórias, notas, nomes ou dados privados para consultas. Reformule referências como "e sobre isso hoje?" usando esse assunto público. Se a referência for pessoal ou ambígua, responda ou peça esclarecimento, sem pesquisar. Não chame ferramentas para salvar, editar ou apagar dados. Nunca produza URLs como ferramentas. O servidor valida e executa a pesquisa; não afirme que já foi realizada antes de receber resultados.`;
 const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 export function personalQuestion(text: string) {
-  return knowledgeQuestion(text) || personalReferenceQuestion(text) || projectActionQuestion(text);
+  return knowledgeQuestion(text) || personalReferenceQuestion(text) || personalActionQuestion(text) || projectActionQuestion(text);
 }
 export function projectActionQuestion(text: string) {
   const question = normalizeQuestion(text);

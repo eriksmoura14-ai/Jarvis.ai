@@ -6,6 +6,9 @@ export function dailyPlanningQuestion(text: string) {
 export function personalReferenceQuestion(text: string) {
   return dailyPlanningQuestion(text) || /\b(?:meus?|minhas?)\b|\b(?:quem sou eu|como me chamo|me conhece|lembra de mim|o que eu quero|sobre mim|o que (?:eu )?(?:anotei|salvei)|(?:no|do) obsidian)\b/.test(normalizeQuestion(text));
 }
+export function personalActionQuestion(text: string) {
+  return /^(?:anotar|anote|nota|lembre|salve|guardar|apagar|apague|esqueca|corrija|corrigir)\b/.test(normalizeQuestion(text));
+}
 export function requestsStructuredReply(question: string) {
   return /\b(?:liste|listar|lista|topicos|bullet|tabela|checklist|passo a passo|em itens|em etapas)\b/.test(normalizeQuestion(question));
 }

@@ -29,10 +29,7 @@ function chunks(note: KnowledgeNote) {
   let heading = ''; let buffer = ''; let fenced = false;
   const flush = () => {
     const text = prose(buffer); buffer = '';
-    for (let start = 0; start < text.length; start += 900) {
-      const excerpt = text.slice(start, start + 1100).trim();
-      if (excerpt) result.push({ heading, excerpt, order: result.length });
-    }
+    for (const excerpt of passages(text)) result.push({ heading, excerpt, order: result.length });
   };
   for (const line of markdownBody(note.content).split('\n')) {
     if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced;
@@ -42,7 +39,44 @@ function chunks(note: KnowledgeNote) {
   }
   flush(); return result;
 }
+// Keep complete table rows and repeat their headers. Cutting at an arbitrary
+// character loses the final goals or separates a status from its own goal.
+function passages(text: string): string[] {
+  const result: string[] = []; const lines = text.split('\n'); let ordinary = '';
+  const flush = () => { for (let start = 0; start < ordinary.length; start += 900) { const excerpt = ordinary.slice(start, start + 1100).trim(); if (excerpt) result.push(excerpt); } ordinary = ''; };
+  const cells = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|') ? line.trim().slice(1, -1).split('|').map(cell => cell.trim()) : [];
+  for (let index = 0; index < lines.length; index++) {
+    const fence = lines[index].match(/^\s*(`{3,}|~{3,})/);
+    if (fence) {
+      flush(); const marker = fence[1]; const code: string[] = [];
+      while (++index < lines.length) {
+        const end = lines[index].match(/^\s*(`{3,}|~{3,})\s*$/)?.[1];
+        if (end && end[0] === marker[0] && end.length >= marker.length) break;
+        code.push(lines[index]);
+      }
+      // Every extracted code fragment keeps a fence, even across chunk limits.
+      // Example tables in code are never promoted to personal goals.
+      const block = code.join('\n');
+      for (let start = 0; start < block.length; start += 850) result.push('```\n' + block.slice(start, start + 1050) + '\n```');
+      continue;
+    }
+    const columns = cells(lines[index]); const separator = cells(lines[index + 1] ?? '');
+    if (!columns.length || separator.length !== columns.length || !separator.every(cell => /^:?-{3,}:?$/.test(cell))) { ordinary += lines[index] + '\n'; continue; }
+    flush(); const header = lines[index] + '\n' + lines[++index]; let table = header;
+    while (index + 1 < lines.length && cells(lines[index + 1]).length === columns.length && !cells(lines[index + 1]).every(cell => /^:?-{3,}:?$/.test(cell))) {
+      const nextSeparator = cells(lines[index + 2] ?? '');
+      if (nextSeparator.length === columns.length && nextSeparator.every(cell => /^:?-{3,}:?$/.test(cell))) break;
+      const row = lines[++index];
+      if (header.length + row.length + 1 > 1100) { if (table !== header) result.push(table); table = header; continue; }
+      if (table.length + row.length + 1 > 1100) { result.push(table); table = header; }
+      table += '\n' + row;
+    }
+    if (table !== header) result.push(table);
+  }
+  flush(); return result;
+}
 const stop = new Set('a o as os e de do da dos das em no na nos nas para por com que qual quais como eu meu minha meus minhas me voce jarvis oi ola sobre quero saber ja foi sao uma um umas uns isso este esta esses essas ser ter tem tenho pode poderia favor favorzinho segundo cerebro obsidian cofre vault biblioteca nota notas anotacao anotacoes arquivo arquivos consultar consulte pesquise pesquisa pesquisar procure busque buscar mostre mostrar explique resumo resuma estudei estudos aprendi lembra lembrar'.split(' '));
+for (const word of 'sim nao ok certo claro quando vai acontece acontecer ocorreu ocorrer agora hoje poderia consegue faca fazer devo'.split(' ')) stop.add(word);
 // A small, explicit vocabulary joins common ways of asking about the same
 // personal records. It changes retrieval only; excerpts remain the real text.
 const equivalents = new Map([
@@ -98,9 +132,20 @@ export function retrieveKnowledge(notes: KnowledgeNote[], message: string): Know
     return { note, ...entry, score };
   })).filter(entry => entry.score > 0).sort((a, b) => b.score - a.score || b.note.updatedAt.localeCompare(a.note.updatedAt) || a.order - b.order);
   const picked: typeof scored = [];
-  // Cover distinct notes first, then allow a second relevant passage per note.
-  for (const entry of scored) if (picked.length < 5 && !picked.some(item => item.note.id === entry.note.id)) picked.push(entry);
-  for (const entry of scored) if (picked.length < 5 && !picked.includes(entry) && picked.filter(item => item.note.id === entry.note.id).length < 2) picked.push(entry);
+  // Do not fill five slots with weak unrelated matches. A second strong
+  // passage from the actual note is more useful than an unrelated fifth note.
+  const threshold = (scored[0]?.score ?? 0) * .35;
+  for (const entry of scored) if (picked.length < 5 && entry.score >= threshold && picked.filter(item => item.note.id === entry.note.id).length < 2) picked.push(entry);
+  // A later correction in the same note can supersede an otherwise strong
+  // old passage. Include the most recent correction section alongside it.
+  for (const id of [...new Set(picked.map(entry => entry.note.id))]) {
+    const indexedNote = indexed.find(item => item.note.id === id)!;
+    const latest = indexedNote.entries.filter(entry => /\b(?:atualizacao|correcao|retificacao|estado atual)\b/.test(normalizeKnowledge(entry.heading))).sort((a, b) => b.order - a.order)[0];
+    const update = latest ? { ...latest, note: indexedNote.note, score: 0 } : undefined;
+    if (!update || picked.some(entry => entry.note.id === id && entry.order === update.order)) continue;
+    if (picked.length >= 5) picked.pop();
+    picked.push(update);
+  }
   return picked.map((entry, index) => ({ reference: `N${index + 1}`, id: entry.note.id, revision: entry.note.revision, path: entry.note.path, title: entry.note.title, heading: entry.heading, excerpt: entry.excerpt }));
 }
 export function knowledgeReply(message: string, notes: KnowledgeNote[], sources: KnowledgeSource[], modelAvailable: boolean): Omit<ChatResponse, 'id' | 'createdAt'> | undefined {

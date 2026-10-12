@@ -115,7 +115,7 @@ describe('biblioteca Markdown pessoal', () => {
     const searchFetch = vi.fn<typeof fetch>(); const modelFetch: typeof fetch = async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'search_web', arguments: JSON.stringify({ queries: ['IA SegredoInedito'], news: true }) } }] }, finish_reason: 'tool_calls' }] });
     const { importFiles, chat } = await setup({ ai, modelFetch, searchFetch });
     await importFiles([{ path: 'Pessoal.md', content: '# Pessoal\nSegredoInedito.' }]);
-    expect((await chat('Tem novidades de IA?')).json().message).toContain('assunto público'); expect(searchFetch).not.toHaveBeenCalled();
+    expect((await chat('Que avanços ocorreram em IA?')).json().message).toContain('assunto público'); expect(searchFetch).not.toHaveBeenCalled();
     expect(validatedPlan({ queries: ['IA SegredoInedito'], news: true }, { message: 'IA hoje', sessionId: randomUUID(), timeZone: 'UTC', privateKnowledgeTerms: 'SegredoInedito' })).toBeUndefined();
   });
   it('descarta uma resposta em andamento após atualizar a nota consultada', async () => {

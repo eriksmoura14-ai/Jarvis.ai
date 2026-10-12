@@ -3,6 +3,8 @@ import { searchQuery } from '../shared/search.js';
 
 const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 const concepts = (text: string) => normalize(text)
+  .replace(/\b(?:segunda|2[aªºo]?)\s+fase\b/g, ' fase2 ')
+  .replace(/olimpiada brasileira de matematica (?:das |de )?escolas publicas/g, ' obmep ')
   .replace(/\b(?:inteligencia artificial|artificial intelligence|machine learning|aprendizado de maquina|ia|ai)\b/g, ' inteligenciaartificial ')
   .replace(/\b(?:ukraine|ukrainians?|ucrania|ucranian[oa]s?)\b/g, ' ucrania ')
   .replace(/\b(?:war|guerra)\b/g, ' guerra ')
@@ -25,7 +27,12 @@ export function searchIntent(query: string) {
     .filter(term => !ignored.has(term));
   const anchor = engineQuery.match(/\b(?:na|no|em|do|da|de)\s+(.+)$/i)?.[1] ?? '';
   const anchors = (concepts(anchor).match(/[\p{L}\p{N}]+/gu) ?? []).filter(term => !ignored.has(term));
+  const requestedDomain = engineQuery.match(/\bsite:((?:[a-z0-9-]+\.)+[a-z]{2,})/i)?.[1].toLowerCase();
   return { news, engineQuery, keywords, relevant: (source: SearchSource) => {
+    if (requestedDomain) {
+      try { const host = new URL(source.url).hostname.toLowerCase(); if (host !== requestedDomain && !host.endsWith('.' + requestedDomain)) return false; }
+      catch { return false; }
+    }
     if (!terms.length) return true;
     const words = new Set(concepts(`${source.title} ${source.snippet}`).match(/[\p{L}\p{N}]+/gu) ?? []);
     return (!anchors.length || anchors.some(term => words.has(term))) && terms.filter(term => words.has(term)).length >= Math.max(1, Math.ceil(terms.length / 2));

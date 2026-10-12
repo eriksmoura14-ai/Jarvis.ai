@@ -45,7 +45,7 @@ describe('interpretação com dados pessoais atuais', () => {
     expect((await chat('E qual o prazo?')).json().message).toContain('De qual objetivo');
     expect(modelFetch).toHaveBeenCalledTimes(3);
   });
-  it.each([false, true])('responde aos objetivos registrados quando a IA nega os dados fornecidos, stream=%s', async stream => {
+  it.each([false, true])('extrai objetivos registrados sem nova inferência mesmo após negativa antiga, stream=%s', async stream => {
     const refusal = 'Não tenho detalhes suficientes sobre os seus objetivos futuros. Você pode me dizer quais são ou indicar a nota onde eles estão descritos?';
     const prompts: { messages: { role: string; content: string }[]; tools?: { function: { name: string } }[] }[] = [];
     const modelFetch = vi.fn<typeof fetch>(async (_url, init) => {
@@ -63,20 +63,15 @@ describe('interpretação com dados pessoais atuais', () => {
     expect(result).toMatchObject({ provider: 'local', command: 'knowledge', message: expect.stringContaining('Aprender Rust') });
     expect(result.message).toContain('Plano, sem curso concluído'); expect(result.message).toContain('Documentar uma API');
     expect(result.message).not.toContain('Não tenho detalhes suficientes'); expect(result.message).toContain('não uma confirmação');
-    expect(result.knowledgeSources).toHaveLength(5); expect(validKnowledgeSources(result.knowledgeSources)).toBe(true);
+    expect(result.knowledgeSources).toHaveLength(1); expect(validKnowledgeSources(result.knowledgeSources)).toBe(true);
     const actual = result.knowledgeSources.find((source: { path: string }) => source.path === 'Planejamento/Metas.md');
     expect(result.message).toContain(`[${actual.reference}]`);
-    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).not.toHaveBeenCalled();
-    const sent = prompts[1];
-    expect(sent.messages.some(message => message.role === 'assistant' && message.content === refusal)).toBe(true);
-    expect(sent.messages.at(-2)).toMatchObject({ role: 'user', content: expect.stringContaining('Plano, sem curso concluído') });
-    expect(sent.messages.at(-1)).toMatchObject({ role: 'user', content: 'quais sao meus futuros objetivos' });
-    expect(sent.messages[0].content).toContain('Não confunda falta de confirmação da conclusão');
-    expect(sent.tools?.some(tool => tool.function.name === 'search_web')).toBe(false);
+    expect(modelFetch).toHaveBeenCalledTimes(1); expect(searchFetch).not.toHaveBeenCalled();
+    expect(prompts).toHaveLength(1); // no inference for extracting the actual table
     const after = await data(); expect(after.library).toEqual(before.library);
     expect(after.history.at(-1).content).toBe(result.message); expect(after.history.at(-1).knowledgeSources).toEqual(result.knowledgeSources);
   });
-  it('aplica a leitura fiel também depois de read_notes, sem uma terceira chamada', async () => {
+  it('economiza a leitura e a inferência quando a tabela de metas já foi recuperada', async () => {
     let id = '';
     const modelFetch = vi.fn<typeof fetch>().mockImplementationOnce(async () => reading([id]))
       .mockImplementationOnce(async () => text('Não tenho informações suficientes sobre seus objetivos. Indique uma nota.'));
@@ -86,11 +81,7 @@ describe('interpretação com dados pessoais atuais', () => {
     id = (await data()).library[0].id;
     const result = (await chat('quais sao meus futuros objetivos', { webSearch: true })).json();
     expect(result).toMatchObject({ provider: 'local', command: 'knowledge', message: expect.stringContaining('Aprender Rust'), knowledgeSources: [{ id, path: 'Direcao.md' }] });
-    const first = JSON.parse(String(modelFetch.mock.calls[0][1]?.body)); const final = JSON.parse(String(modelFetch.mock.calls[1][1]?.body));
-    // "Objetivos" now finds a "Metas" table before the optional read as well.
-    expect(first.messages.some((message: { content: string }) => message.content.includes('Plano, sem curso concluído'))).toBe(true);
-    expect(final.messages.at(-2).content).toContain('Plano, sem curso concluído'); expect(final.tools).toBeUndefined();
-    expect(modelFetch).toHaveBeenCalledTimes(2); expect(searchFetch).not.toHaveBeenCalled();
+    expect(modelFetch).not.toHaveBeenCalled(); expect(searchFetch).not.toHaveBeenCalled();
     expect((await data()).history.at(-1).content).toBe(result.message);
   });
   it('lista títulos reais para o pedido do print e esclarece uma fonte sem assunto', async () => {

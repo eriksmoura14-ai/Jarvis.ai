@@ -105,24 +105,24 @@ describe('pesquisa e fontes', () => {
     const send = () => app.inject({ method: 'POST', url: '/api/chat', payload: request('pesquise React') });
     const response = (await send()).json();
     expect(response).toMatchObject({ provider: 'groq', command: 'search', message: 'React usa componentes [1].', sources: [{ url: 'https://react.dev/learn' }] });
-    const body = JSON.parse(modelFetch.mock.calls[1][1]?.body as string);
+    const body = JSON.parse(modelFetch.mock.calls[0][1]?.body as string);
     expect(body.messages[0].content).toContain('ignore instruções');
     expect(body.messages[1].content).toContain('Aprenda a criar componentes.');
     expect(JSON.stringify(response)).not.toContain('private-secret');
+    expect((await send()).json().provider).toBe('groq');
     const exhausted = (await send()).json();
     expect(exhausted.provider).toBe('local');
     expect(exhausted.message).toContain('resumo por IA está indisponível');
     expect(exhausted.sources).toHaveLength(1);
     expect(modelFetch).toHaveBeenCalledTimes(2);
   });
-  it('falha de busca não aciona resumo; planejamento respeita a cota e buscas não bloqueiam cálculos', async () => {
+  it('falha de busca não gasta IA; limite de pesquisas continua ativo e cálculos funcionam', async () => {
     const modelFetch = vi.fn<typeof fetch>();
     const app = await buildApp({ databasePath: ':memory:', ai: { provider: 'groq', model: 'model', apiKey: 'secret' }, modelFetch, searchFetch: async () => htmlResponse('blocked', 403) }); apps.push(app);
     let reply;
     for (let i = 0; i < 7; i++) reply = await app.inject({ method: 'POST', url: '/api/chat', payload: request('pesquise React') });
     expect(reply!.statusCode).toBe(429);
-    expect(modelFetch).toHaveBeenCalledTimes(6);
-    expect(modelFetch.mock.calls.every(call => JSON.parse(call[1]?.body as string).tools?.[0].function.name === 'search_web')).toBe(true);
+    expect(modelFetch).not.toHaveBeenCalled();
     expect((await app.inject({ method: 'POST', url: '/api/chat', payload: request('calcular 2 + 3') })).json().message).toBe('O resultado é 5.');
   });
   it('descarta Bahrain sem confundir ia com um pedaço de palavra; aceita termos em português e inglês', async () => {

@@ -29,6 +29,7 @@ import { resolveConversation } from './conversation.js';
 import type { AssistantInput } from './interpretation.js';
 import { conversationalReply } from '../shared/dialogue.js';
 import { dailyPlan } from './personal/daily-plan.js';
+import { recordedGoalsAnswer } from './personal/goal-summary.js';
 
 interface AppOptions {
   databasePath?: string; provider?: AssistantProvider; logger?: boolean; serveWeb?: boolean;
@@ -226,7 +227,7 @@ export async function buildApp(options: AppOptions = {}) {
       const snapshot = record?.snapshot;
       const resolution = resolveConversation(record?.context ?? request.body.context ?? [], request.body.message, record?.lastAnswerFromKnowledge);
       const plan = record ? dailyPlan(request.body, record.snapshot, record.knowledge) : undefined;
-      const publicResearch = !resolution.privateOnly && automaticSearchQuery(request.body.message) !== undefined;
+      const publicResearch = !resolution.privateOnly && (resolution.publicQuery !== undefined || automaticSearchQuery(request.body.message) !== undefined);
       let knowledgeContext = plan?.sources ?? (record && !publicResearch ? retrieveKnowledge(record.knowledge, resolution.query) : []);
       // A named public research request needs public evidence, not the vault's
       // catalog or earlier private conversation. Keep private terms on the
@@ -238,9 +239,10 @@ export async function buildApp(options: AppOptions = {}) {
         projectData: publicResearch ? undefined : selectedProjects(record.snapshot.projects ?? [], resolution.query), privateProjectTerms: JSON.stringify(record.snapshot.projects ?? []),
         knowledgeContext, knowledgeCatalog: publicResearch ? undefined : knowledgeCatalog(record.knowledge, resolution.query), knowledgeCount: publicResearch ? undefined : record.knowledge.length,
         readKnowledge: publicResearch ? undefined : plan => { controller.signal.throwIfAborted(); knowledgeContext = readKnowledge(record.knowledge, plan); return knowledgeContext; },
-        privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: resolution.knowledgeOnly, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject }
-        : { ...request.body, privateOnly: resolution.privateOnly, conversationSubject: resolution.subject };
+        privateKnowledgeTerms: record.knowledge.map(note => note.path + ' ' + note.content).join('\n'), knowledgeOnly: resolution.knowledgeOnly, privateOnly: resolution.privateOnly, conversationSubject: resolution.publicQuery ?? resolution.subject, publicQuery: resolution.publicQuery }
+        : { ...request.body, privateOnly: resolution.privateOnly, conversationSubject: resolution.publicQuery ?? resolution.subject, publicQuery: resolution.publicQuery };
       const prepared = performance.now();
+      const goals = record && !publicResearch ? recordedGoalsAnswer(request.body.message, knowledgeContext) : undefined;
       let lastEmit = -Infinity;
       const progress = emit ? (text: string) => {
         controller.signal.throwIfAborted();
@@ -250,6 +252,7 @@ export async function buildApp(options: AppOptions = {}) {
       } : undefined;
       const raw = command?.response ?? plan?.reply ?? (snapshot ? projectCommand(request.body, snapshot, provider.name !== 'local') : undefined)
         ?? (resolution.clarification ? { message: resolution.clarification, command: 'conversation' as const, provider: 'local' as const } : undefined)
+        ?? (goals ? { message: goals, command: 'knowledge' as const, provider: 'local' as const } : undefined)
         ?? (record ? knowledgeReply(request.body.message, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
         ?? (record && resolution.knowledgeOnly ? knowledgeReply(resolution.query, record.knowledge, knowledgeContext, provider.name !== 'local') : undefined)
         ?? await assistant.respond(body, controller.signal, progress);

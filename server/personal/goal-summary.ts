@@ -4,12 +4,21 @@ import { normalizeKnowledge, type KnowledgeSource } from '../../shared/knowledge
 // goals from unrelated notes. Only broad overview requests and explicit tables
 // qualify; priorities, dates and achievements are never guessed.
 export function recordedGoalsFallback(question: string, answer: string, sources: KnowledgeSource[]): string | undefined {
-  const query = normalizeKnowledge(question).trim().replace(/^(?:oi[,!]?\s+)?jarvis[,.:!]?\s+/, '').replace(/[.!?]+$/, '').replace(/\s+/g, ' ').trim();
-  if (!/^(?:(?:quais(?: sao| seriam)?|liste|listar|mostre|resuma|me (?:diga|lembre|mostre)) )?(?:(?:os|as) )?(?:meus|minhas) (?:(?:futuros|futuras|atuais) )?(?:objetivos|metas|planos)(?: (?:futuros|futuras|atuais|para o futuro))?$/.test(query)) return;
   const refusal = normalizeKnowledge(answer).trim();
   if (answer.length > 600 || /\[N\d+\]|\b(?:mas|porem|contudo)\b/i.test(refusal)
     || !/^nao (?:tenho|possuo|encontrei|ha)\b/.test(refusal) || !/\b(?:detalhes|informacoes|dados|objetivos|metas)\b/.test(refusal)) return;
+  return recordedGoalsAnswer(question, sources);
+}
 
+// An explicit overview of recorded goals is an extraction task. Resolve it
+// before inference so a model cannot deny existing evidence or spend quota.
+export function recordedGoalsAnswer(question: string, sources: KnowledgeSource[]): string | undefined {
+  const query = normalizeKnowledge(question).trim().replace(/^(?:oi[,!]?\s+)?jarvis[,.:!]?\s+/, '').replace(/[.!?]+$/, '').replace(/\s+/g, ' ').trim();
+  if (!/^(?:(?:quais(?: sao| seriam)?|liste|listar|mostre|resuma|me (?:diga|lembre|mostre)) )?(?:(?:os|as) )?(?:meus|minhas) (?:(?:futuros|futuras|atuais) )?(?:objetivos|metas|planos)(?: (?:futuros|futuras|atuais|para o futuro))?$/.test(query)) return;
+  // Extracting rows alone cannot reconcile a later correction. Send both
+  // passages to the model instead of presenting an obsolete status as current.
+  if (sources.some(source => /\b(?:atualizacao|correcao|retificacao)\b/.test(normalizeKnowledge(source.heading))
+    && /\b(?:superad[ao]|substituid[ao]|corrigid[ao]|retificad[ao])\b/.test(normalizeKnowledge(source.excerpt)))) return;
   const rows: string[] = []; const seen = new Set<string>(); let budget = 3800;
   const cells = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|')
     ? line.trim().slice(1, -1).split('|').map(cell => cell.trim()) : [];

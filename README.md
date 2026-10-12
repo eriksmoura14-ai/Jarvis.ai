@@ -14,6 +14,8 @@ Assistente pessoal para o navegador, inspirado na estética futurista do JARVIS.
 
 Perguntas como “e qual o prazo?” e “por onde começo?” também acompanham o objetivo anterior. A busca pessoal reconhece equivalências selecionadas entre metas, objetivos e planos. Pesquisas claramente públicas evitam enviar o catálogo e o histórico pessoal desnecessariamente, preservando a forma de tratamento e as validações do servidor.
 
+**Qualidade e consumo:** [correções, testes de roteamento e avaliação com o modelo real](docs/quality.md). Pedidos de pesquisa sem assunto pedem esclarecimento; datas públicas de provas acionam consulta oficial; “sim” acompanha a conversa ativa. Buscas simples usam uma chamada de IA para resumir. O servidor respeita pausas por cota e a recuperação inclui retificações posteriores das notas. Testes do aplicativo e avaliação das respostas do modelo são verificações diferentes.
+
 Dois modos de execução: **servidor**, com API Fastify e notas SQLite, e **GitHub Pages**, com os mesmos comandos e notas processados e armazenados no navegador. O modo padrão continua sendo o servidor; a build `pages` não exige API.
 
 **Projetos e tarefas:** [objetivos, etapas, prazos, progresso e propostas do chat para revisar](docs/projects.md). No modo pessoal, os dados acompanham sua conta no celular e computador. O painel funciona sem IA; planos propostos pela IA só são aplicados após **Confirmar proposta**. Reutiliza o Supabase existente, sem nova chave ou SQL.
